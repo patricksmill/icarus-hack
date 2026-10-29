@@ -13,17 +13,17 @@ Addresses are for the USA build (0004000000030100). Findings so far are in
 
 | Feature | How | Status |
 | --- | --- | --- |
-| Mouse aim, air | aim delta at 0x006D26C4 (`zakuro-core/src/aim_mouse.rs`) | working, tested by you |
-| Mouse look, ground | camera box collapsed at 0x006D2ED4 | working, tested by you |
+| Mouse aim, air | aim delta at 0x006D26C4 (`zakuro-core/src/aim_mouse.rs`) | working, tested |
+| Mouse look, ground | camera box collapsed at 0x006D2ED4 | working, tested  |
 | Smaller HUD and reticle | sprite flush 0x0092F408, reticle size 0x007C4BD0 | working |
 | 60 FPS | `dist/60fps/code.ips`, 5 words | working, speed verified |
-| Recompiled + hooks | 4 hooked functions interpreted, rest native | working, tested by you |
+| Recompiled + hooks | 4 hooked functions interpreted, rest native | working, tested |
 | Overclock for heavy scenes | `ZAKURO_OVERCLOCK`, default 2 | built, untested in heavy scenes |
 | Widescreen | projection 0x003901C4, HUD, reticle bounds (from Darkshade's mod) | mapped, not built |
 | Stacked dialog text | probably Zakuro's GPU texture cache | to confirm (software rasterizer test) |
 | Land battles at 1x | Zakuro: textures of a buffer written back unchanged stay scaled | fixed, built |
 | Pause menu on top | pause screen and dialogs replayed in the top passes, touches mapped | working headless, built |
-| Widescreen, any aspect | lens aspect at 0x003901C4, top 2D squeezed by pass (0x0092E4F8), mouse scaled | working, tested by you |
+| Widescreen, any aspect | lens aspect at 0x003901C4, top 2D squeezed by pass (0x0092E4F8), mouse scaled | working, tested |
 
 ## What the dialog looks like to the game
 
