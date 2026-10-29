@@ -59,8 +59,8 @@ fn main() {
         std::process::exit(1);
     });
     if let Some(library) = &mut system.recompiled {
-        for start in zakuro_core::aim_mouse::FUNCTIONS {
-            println!("interpreting 0x{start:08X}: {}", library.interpret(start));
+        for address in zakuro_core::aim_mouse::PLACES {
+            println!("interpreting at 0x{address:08X}: {} functions", library.interpret_at(address));
         }
     }
     let mut input = InputState::default();
@@ -380,6 +380,9 @@ fn quads_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool 
             let info = system.cpu.regs[1];
             let w: Vec<String> = (0..8).map(|i| format!("{:08X}", read32(system, info + i * 4))).collect();
             println!("  [{frame}] aim tick r0 {:08X} frame info {info:08X}: {}", system.cpu.regs[0], w.join(" "));
+        }
+        if matches!(system.cpu.regs[15], 0x0060D39C | 0x0060D5E8 | 0x0060D60C | 0x009E9A14 | 0x009E2BB4) {
+            println!("  [{frame}] at {:08X} lr {:08X}", system.cpu.regs[15], system.cpu.regs[14]);
         }
         if system.cpu.regs[15] == 0x0060DA58 {
             let (r0, r5, r9, r10) = (system.cpu.regs[0], system.cpu.regs[5], system.cpu.regs[9], system.cpu.regs[10]);

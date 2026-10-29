@@ -1,0 +1,12 @@
+#!/bin/sh
+# gcc without optimisation, for a recompiled library that only has to run
+# the same as the real one, built in a fraction of the time: 3dsrecomp passes
+# -O2 and gcc tuning flags, which this drops.
+args=""
+for a in "$@"; do
+  case $a in
+    -O2) a=-O0 ;;
+  esac
+  args="$args '$a'"
+done
+eval exec gcc $args
