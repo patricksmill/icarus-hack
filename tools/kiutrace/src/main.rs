@@ -20,6 +20,7 @@
 //!   watch <addr> <len>            add a range to the trace
 //!   trace <frames>                run instruction by instruction, printing each write to a watched range
 //!   aim <dx> <dy> <frames>        run with Zakuro's own mouse aiming captured, moving dx, dy a frame
+//!   mirror                        draw the bottom screen's hearts, item box and power icon on top too
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
@@ -144,6 +145,7 @@ fn main() {
                 }
             }
             "overclock" => system.cpu.overclock = num(1).max(1),
+            "mirror" => system.aim_mouse.get_or_insert_with(Default::default).mirror_bottom = true,
             "portraits" => system.aim_mouse.get_or_insert_with(Default::default).portrait_scale = float(1),
             "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
@@ -381,7 +383,7 @@ fn quads_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool 
             let w: Vec<String> = (0..8).map(|i| format!("{:08X}", read32(system, info + i * 4))).collect();
             println!("  [{frame}] aim tick r0 {:08X} frame info {info:08X}: {}", system.cpu.regs[0], w.join(" "));
         }
-        if matches!(system.cpu.regs[15], 0x0060D39C | 0x0060D5E8 | 0x0060D60C | 0x009E9A14 | 0x009E2BB4) {
+        if matches!(system.cpu.regs[15], 0x0060D39C | 0x0060D5E8 | 0x0060D60C | 0x009E9A14 | 0x009E2BB4 | 0x00A10900 | 0x00A191DC | 0x00A13304) {
             println!("  [{frame}] at {:08X} lr {:08X}", system.cpu.regs[15], system.cpu.regs[14]);
         }
         if system.cpu.regs[15] == 0x0060DA58 {
@@ -419,7 +421,7 @@ fn quads_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool 
                         }
                     }
                 }
-                let raw: Vec<String> = stack.chunks(4).take(48).map(|c| format!("{:08X}", u32::from_le_bytes(c.try_into().unwrap()))).collect();
+                let raw: Vec<String> = stack.chunks(4).filter(|c| (0x0010_0000..0x00C9_6000).contains(&u32::from_le_bytes((*c).try_into().unwrap()))).map(|c| format!("{:08X}", u32::from_le_bytes(c.try_into().unwrap()))).collect();
                 println!("  stack at {sp:08X}: {}", raw.join(" "));
                 println!("  [{frame}] backtrace from {caller:08X} r0 {:08X} r4 {:08X} r5 {:08X} r6 {:08X}: {}", system.cpu.regs[0], system.cpu.regs[4], system.cpu.regs[5], system.cpu.regs[6], chain.join(" "));
             }

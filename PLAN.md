@@ -169,6 +169,20 @@ Status: portraits done. The fork calls the game's portrait drawing
 at context+0x2454) from the top pass before the narration. Their flush puts
 each speaker in the bottom corner on its side, at ZAKURO_PORTRAIT_SCALE (0.5).
 Tested headless on states 1, 3 and 4; expressions follow the bottom screen's.
+
+Hearts, item box and power icon: done by record and replay. The bottom
+screen's background drawing (0x00A17F70) calls each one (header strip at
+0x00A181CC, item box 0x00A18400, power icon 0x00A18430); the hook keeps the
+call's target and arguments, and the next frame's top pass makes the call
+again, between the portraits and the narration. Its sprites go under the score
+(hearts) or the health bar (item box, power icon), at the HUD scale; the
+chapter title's (0x00A192E4) are left off. ZAKURO_MIRROR_BOTTOM=0 turns it off.
+Checked over 10 s of play: same score, position and pose as without it.
+
+Side finding: the reticle hook now shrinks only the size handed to its
+drawing (0x007C4DC0), not the size the reticle keeps (+0x5C), which may feed
+lock-on. Every hook leaves gameplay the same (10 s comparison); only the
+bottom screen's decorative background animation drifts.
 The game seems to have its own upper-screen captions (CaptionUp_Dynamic
 layouts): if its option works, the narration hook can default to off.
 
