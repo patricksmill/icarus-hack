@@ -20,6 +20,7 @@
 //!   watch <addr> <len>            add a range to the trace
 //!   trace <frames>                run instruction by instruction, printing each write to a watched range
 //!   aim <dx> <dy> <frames>        run with Zakuro's own mouse aiming captured, moving dx, dy a frame
+//!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
 //!   quads <frames>                print each 2D sprite batch flushed (0x0092F408): caller, and each quad's box
@@ -143,6 +144,7 @@ fn main() {
                 }
             }
             "overclock" => system.cpu.overclock = num(1).max(1),
+            "portraits" => system.aim_mouse.get_or_insert_with(Default::default).portrait_scale = float(1),
             "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
             "quads" => {
@@ -378,6 +380,11 @@ fn quads_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool 
             let info = system.cpu.regs[1];
             let w: Vec<String> = (0..8).map(|i| format!("{:08X}", read32(system, info + i * 4))).collect();
             println!("  [{frame}] aim tick r0 {:08X} frame info {info:08X}: {}", system.cpu.regs[0], w.join(" "));
+        }
+        if system.cpu.regs[15] == 0x0060DA58 {
+            let (r0, r5, r9, r10) = (system.cpu.regs[0], system.cpu.regs[5], system.cpu.regs[9], system.cpu.regs[10]);
+            let portraits = read32(system, r10 + 0xD8);
+            println!("  [{frame}] bottom bg call r0 {r0:08X} r9 {r9:08X} r10 {r10:08X} r5 {r5:08X} portraits *(r10+D8) {portraits:08X}");
         }
         if system.cpu.regs[15] == 0x00828E34 {
             println!("  [{frame}] pacing r0 {:08X} r1 {:08X} lr {:08X} sp {:08X}", system.cpu.regs[0], system.cpu.regs[1], system.cpu.regs[14], system.cpu.regs[13]);

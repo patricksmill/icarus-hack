@@ -164,6 +164,14 @@ to keep it on the bottom too (both are shown now), and readability.
 
 ## Phase 4: portraits, then the rest
 
+Status: portraits done. The fork calls the game's portrait drawing
+(0x009E2BB4, portraits at *(context+0xC3C), drawn at 1 - the bottom UI's fade
+at context+0x2454) from the top pass before the narration. Their flush puts
+each speaker in the bottom corner on its side, at ZAKURO_PORTRAIT_SCALE (0.5).
+Tested headless on states 1, 3 and 4; expressions follow the bottom screen's.
+The game seems to have its own upper-screen captions (CaptionUp_Dynamic
+layouts): if its option works, the narration hook can default to off.
+
 1. Portraits, done the same way. They animate (expressions, slide-ins), so
    check that the animation still plays on the top screen.
 2. Hearts counter and weapon/item icons, small, anchored to a corner and
