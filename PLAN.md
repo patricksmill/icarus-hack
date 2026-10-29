@@ -21,6 +21,8 @@ Addresses are for the USA build (0004000000030100). Findings so far are in
 | Overclock for heavy scenes | `ZAKURO_OVERCLOCK`, default 2 | built, untested in heavy scenes |
 | Widescreen | projection 0x003901C4, HUD, reticle bounds (from Darkshade's mod) | mapped, not built |
 | Stacked dialog text | probably Zakuro's GPU texture cache | to confirm (software rasterizer test) |
+| Land battles at 1x | Zakuro: textures of a buffer written back unchanged stay scaled | fixed, built |
+| Pause menu on top | pause screen and dialogs replayed in the top passes, touches mapped | working headless, built |
 
 ## What the dialog looks like to the game
 
@@ -192,6 +194,34 @@ layouts): if its option works, the narration hook can default to off.
    scaled with the HUD.
 3. Anything else Phase 1 marks as needed.
 
+## Phase 4b: the pause menu on the top screen
+
+Status: working headless on state 5, built. The bottom battle pass
+(0x0060D93C) draws the pause screen with one call, 0x00A01A1C(pause at
+ctx+0x243C, ctx, shown) at 0x0060DBB4. The fork replays it in the top pass
+after the "PAUSED" label (0x0060D68C, reached only while paused), with the
+sprites 1:1 at x+40, what spans the bottom screen (dimming, bands)
+stretched to 400, and Resume, Retreat and Remove Display by the top
+screen's edges (picked by flush caller, main page only). The dialogs over it (Retreat's) are a context of their own
+(0x14A1340C): 2D at 0x00722AF4/0x00722B0C, replayed at 0x00725828; text
+through the 3D renderer at 0x00722BA4-0x00722DB8 with a projection for the
+bottom screen, replayed at 0x007258A0 (right eye) and 0x007258C0 (left eye)
+with the projection's x row times 0.8. Options and its four pages work too.
+
+The frontend lets the mouse go while it is shown and holds it again after,
+and in top-only maps a click on the top screen to the bottom screen
+(`AimMouse::pause_menu_touch`: 40 px to the left, the edge buttons by their
+edges, nothing in the gaps they leave). ZAKURO_PAUSE_TOP=0 turns it off.
+
+Checked: Resume, Retreat (No, Yes), Options and its pages by touch at the
+mapped spots, 30 and 60 FPS, 3x hardware renderer. The pause object's memory
+is the same after 150 frames with and without it, and 300 frames of play
+after Resume give identical screens. Retreat's Yes faults the harness at the
+scene change with or without the hook (harness limit).
+
+Cosmetic: on Options' pages, elements the bottom screen anchors to its
+edges (the OK panel in Reticle/Camera) still sit 40 px in from the top's.
+
 ## Phase 5: playing without the bottom screen
 
 1. **Keys for touch actions.** Using a power or an item means tapping the
@@ -213,13 +243,87 @@ either a GPU memory fill or a CPU write from recompiled code. Fix it so the
 cache invalidates on that write. If it's a general bug, it's worth reporting
 upstream too.
 
-## Phase 7: widescreen (after this)
+## Phase 7: widescreen, at any aspect
 
-Already mapped. Projection scale at 0x003901C4 (copy and scale row 1),
-culling, HUD squeeze in the sprite flush (which also has to place the new
-top-screen dialog), and reticle bounds in 0x006D14F0 and 0x006D269C. With the
-mouse, the aim mapping has to account for the wider view. This comes after the
-UI move, so all top-screen UI is anchored correctly from the start.
+Goal: the top screen fills the window at whatever shape it has (16:9,
+21:9, 32:9, or a window dragged to any size), with a wider view rather
+than a stretched one, no pop-in at the new edges, the HUD and the moved UI
+the right shape and by the window's edges, and the mouse aiming right
+across all of it.
+
+How it works: the game keeps drawing into its 400x240 buffers, with a view
+k times wider squeezed into them, where k = (window width / height) /
+(5/3). The presenter stretches the picture back out to the window, and
+every top-screen 2D draw gets squeezed by 1/k so it comes out the right
+shape. This is how Darkshade's mod works (FINDINGS, "Darkshade's ... patch"),
+with k read every frame instead of fixed at 0.9375 or 0.714.
+
+### Steps
+
+1. **Window shape** (frontend). Add a "Fit window" option to Top screen
+   shape: in top-only layout, the top screen's width is
+   240 x window width / height, limited to 5:3..32:9. Pass the shape to the
+   core every frame (a field on `AimMouse`, like `hud_scale`), so k
+   follows a resize on the next frame. 16:9 and 21:9 stay as fixed
+   choices. Console (5:3) turns all of this off.
+2. **Wider view** (core). First look for where the game camera's aspect is
+   set (camera+0x40, the aim's camera +0x2BC; "Still to find" in
+   FINDINGS), and multiply it there. If both the projection (0x003901C4)
+   and the culling (0x00756754 grows its box by tan(fovy/2) x aspect) read
+   that field, one write widens both. Fallback: Darkshade's way. At the
+   getter's return (0x003901EC), copy the matrix and scale row 1
+   (m[4..7]) by 1/k. The projection is cached at camera+0x6C, so it must
+   not be scaled in place. The copies need guest memory, from a page
+   Zakuro sets aside, or a 32-slot ring like the mod's. Stereo builds
+   both eyes from this projection (0x008D11B0), so they widen with it.
+3. **No pop-in** (core). If step 2 didn't cover culling, widen the box in
+   0x00756754 by k, along with any other culling that reads fovy or
+   aspect. Check: turn the camera with enemies and scenery just past the
+   old edge, and nothing should appear late.
+4. **Top-screen 2D the right shape** (core). Hook 0x0092E4F8(ctx, screen),
+   which every 2D pass starts with: 0 is top, 1 is bottom (seen in both
+   UI contexts). The sprite flush then knows each batch's screen. Squeeze
+   every top flush's x by 1/k about an anchor: the left or right edge for
+   what sits by one, the centre otherwise, using the same rule as
+   `shrink_hud`'s anchor. Full-width quads (fades, the pause dim) stay
+   full width. The HUD scale, reticle, narration, portraits, mirrored
+   hearts and pause menu placements all run first and keep working,
+   because the squeeze follows them. The pause click mapping
+   (`pause_menu_touch`) undoes the same squeeze. Text drawn through the
+   3D renderer with its own projection (dialog text, 0x0090A5B4) gets
+   row 1 scaled by 1/k too.
+5. **Aim** (core). Correct the reticle bounds at 0x006D14F0's returns
+   (0x006D15B4, 0x006D1764) and the turn from reticle x at 0x006D26C0,
+   both by k, the way the mod does. Divide the mouse's horizontal
+   movement by k so the reticle feels the same speed both ways. Check that
+   shots hit enemies at the edges in the air, and that ground camera
+   turning is unchanged.
+6. **Resolution.** Squeezed into 400 columns, the picture is k times softer
+   horizontally (1.4 at 21:9). Raising Resolution already makes up for
+   that (for example 7x for a 2560x1080 window), at a GPU cost. If that
+   cost matters, add a separate horizontal scale for the top screen to the
+   hardware renderer (surface rows, viewports, transfers, crops), set to
+   k x Resolution. This is optional; it comes last, only if it's needed.
+
+### Checks
+
+- Harness: a `wide <aspect>` command, and screenshots stretched to the
+  aspect for viewing. Use your states for air, ground, boss, pause and
+  dialog at 5:3, 16:9, 21:9 and 32:9, at 30 and 60 FPS. Look for: round
+  things round (hearts icons, reticle), HUD at the edges, nothing missing
+  at the edges, and pause clicks landing.
+- No gameplay change at 5:3: same 300-frame comparison as before.
+- Windows build for you: drag the window through shapes while playing,
+  then air aiming at the edges, ground turning, and the pause menu.
+
+### Unknowns
+
+- Where the aspect is set, and whether culling reads it (step 2 decides
+  whether one hook is enough).
+- 2D on top not drawn through the sprite batch or the text path; found
+  by screenshot review.
+- Effects that read the frame as a texture (the glow pass from the
+  resolution fix) work in buffer space and should be unaffected.
 
 ## How each step is checked
 

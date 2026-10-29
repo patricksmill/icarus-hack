@@ -123,6 +123,27 @@ Sprite flush callers (return addresses into 0x0092F408), by element:
 | 0x0060D68C, 0x00A0D22C-0x00A0E338, 0x00A04710-0x00A04F00, 0x00A01A4C | pause screen | top label, bottom menu | |
 | 0x00A0E9D8, 0x00A0EA60, 0x00A182C4 | boss intro bottom screen | bottom | |
 
+Pause screen, from state 5: the bottom battle pass 0x0060D93C calls
+0x00A01A1C(ctx+0x243C, ctx, shown) at 0x0060DBB4 when 0x00B52774() says
+paused; it draws the dimming (0x00A0D22C, 0..320 x 0..240), Resume
+(0..148 x 55..111), Retreat (172..320), Options (35..285 x 124..144), loot
+and Remove Display, and Options' pages. The top pass 0x0060D3EC calls
+0x00A0E6D8(ctx+0x243C, ctx), the "PAUSED" label, at 0x0060D688 only while
+paused. The battle bottom elements (hearts, item box) are still drawn under
+it. The pause object's state is at +4 (0 closed).
+
+Dialogs (Retreat's "Quit and return to the goddess?") are their own 2D
+context (0x14A1340C in state 5). Bottom pass 0x00722A50: 0x00721C64 dimming
+and box, 0x00721484 buttons, then the text through the 3D renderer (pointer
+at 0x00F2DC9C): 0x00909D54 lights, 0x0090A5B4(renderer, projection 4x4, view
+3x4), 0x0090FFA0, 0x00909ACC(text) twice, 0x0090A6A4. The bottom projection
+is rows (0, -1/120, 0, 1), (-1/160, 0, 0, 1), (0, 0, 1, 0), (0, 0, 0, 1);
+the top pass 0x007255AC uses -1/200 for its own. Top passes draw into both
+eyes' buffers: 0x00916588(.., 2) switches to the right eye's (0x1F000000),
+(.., 0) back to the left (0x1F080000, the one shown with the slider at 0).
+2D sprites go to both through the batch, 3D-renderer text has to be drawn
+once in each.
+
 Quad positions are in the element's own space (the narration's text starts at
 0,0), placed on screen by a transform elsewhere, not baked into the vertices.
 

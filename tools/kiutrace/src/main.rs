@@ -24,6 +24,7 @@
 //!   mirror                        draw the bottom screen's hearts, item box and power icon on top too
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
+//!   pausetop                      draw the pause menu on the top screen too, with Zakuro's hook
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
 //!   quads <frames>                print each 2D sprite batch flushed (0x0092F408): caller, and each quad's box
 //!   narr <x> <y> <frames>         run, also drawing the narration line on the top screen at x, y
@@ -159,6 +160,7 @@ fn main() {
             "mirror" => system.aim_mouse.get_or_insert_with(Default::default).mirror_bottom = true,
             "portraits" => system.aim_mouse.get_or_insert_with(Default::default).portrait_scale = float(1),
             "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
+            "pausetop" => system.aim_mouse.get_or_insert_with(Default::default).pause_on_top = true,
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
             "quads" => {
                 for _ in 0..num(1) {
