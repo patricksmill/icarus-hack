@@ -109,6 +109,17 @@ Make a complete inventory before moving anything:
 
 ## Phase 2: understand the UI framework (research)
 
+Status, for the narration (approach A works, no replay needed):
+- Top and bottom battle UI are drawn by 0x0060D39C (top) and the code around
+  0x0060D7E8 (bottom), both through one 2D context (0x14155908 in your
+  states), which also holds the narration's message at +0x3124.
+- The line is drawn by 0x009E9A14(message, context) from the message's own
+  fields: shown flag +0, line +4, x/y +0x14/+0x18, size +0x1C/+0x20, texture
+  coordinates +0x24. Its texture is picked by index (0x14) in the context, so
+  it draws on whichever screen's pass calls it.
+- The fork calls it from the top pass (at 0x0060D60C, registers saved and
+  restored around the call), with the line moved to the bottom centre.
+
 Questions to answer, in this order:
 
 1. **Who calls the dialog flush?** Walk up from 0x00A192E4 to the dialog's UI
@@ -131,6 +142,10 @@ reads, screenshots), the Ghidra decompile (`analysis/all.c`), and your save
 states. The output is a section in FINDINGS.md that settles approach A or B.
 
 ## Phase 3: dialog text on the top screen
+
+Status: steps 1, 2 and 5 done, tested headless on your states 1, 3 and 4
+(centred, scaled with the HUD, shadow kept). Next: your test, then whether
+to keep it on the bottom too (both are shown now), and readability.
 
 1. Prototype in the harness. Add the dialog's draw to the top pass (A), or
    replay its quad (B). Check with screenshots that the text appears on the top
