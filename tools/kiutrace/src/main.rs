@@ -313,8 +313,8 @@ fn quads_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool 
             let count = end.wrapping_sub(start);
             if count > 0 && count <= 0x400 {
                 let first = pointer - count * 0x60;
-                if std::env::var_os("KIUTRACE_QUADDUMP").is_some() && caller == 0x00A192E4 {
-                    let q = read(system, pointer - count * 0x60, 0x60);
+                if std::env::var_os("KIUTRACE_QUADDUMP").is_some() && caller == std::env::var("KIUTRACE_QUADDUMP").ok().and_then(|v| u32::from_str_radix(&v, 16).ok()).unwrap_or(0) {
+                    let q = read(system, pointer - count * 0x60, count * 0x60);
                     let words: Vec<String> = q.chunks(4).map(|c| format!("{:08X}", u32::from_le_bytes(c.try_into().unwrap()))).collect();
                     println!("  text quad: {}", words.join(" "));
                     let b = read(system, batch, 0x100);

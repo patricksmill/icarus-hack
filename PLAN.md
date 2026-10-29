@@ -75,10 +75,19 @@ Not planned.
 2. **Version control.** Put the project in git, commit the Zakuro fork's
    branch, and record the recomp-abi patch. Every change is then reviewable and
    can be undone.
-3. **Stacked text check.** You switch to the software rasterizer briefly. If
-   the stacking goes away, it's Zakuro's texture cache (Phase 6).
+3. **Stacked text check.** Done without you: it reproduces in the harness's
+   software renderer, so it isn't Zakuro's texture cache. The line's texture
+   holds two lines' glyphs, so it wasn't cleared before the new line was
+   rendered. Cause to find in Phase 2 (question 4); the fix is Phase 6.
+
+Status: done. States 1-5 load in the harness; the project, the Zakuro fork
+(branch `kiu-mouse`) and 3dsrecomp (branch `kiu`) are committed locally.
 
 ## Phase 1: map the bottom screen's UI
+
+Status: callers mapped from your states, see FINDINGS.md "Bottom-screen UI
+inventory". Narration is 0x0060DB98 (shadow + text quads from one line
+texture), portrait 0x009E3068, band 0x0060DB64.
 
 Make a complete inventory before moving anything:
 

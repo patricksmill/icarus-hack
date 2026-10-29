@@ -105,3 +105,29 @@ local player. Game camera (`aim+0x8C → +0x2C`): fovy at +0x2B8, aspect at +0x2
 - Patched: 60/60 frames drawn on the old-3DS cycle budget (no overclock
   needed); strafing and firing for 1.5 s matches the unpatched game frame
   for frame.
+
+## Bottom-screen UI inventory (from your save states, PLAN phase 1)
+
+Sprite flush callers (return addresses into 0x0092F408), by element:
+
+| Caller | Element | Screen | Notes |
+| --- | --- | --- | --- |
+| 0x0060DB64 | narration band, 0..320 x 0..56 | bottom | dark strip behind the text |
+| 0x0060DB98 | **narration text**, 2 quads | bottom | shadow (colour BF000000, +1,+1), then text (FFFFFFFF), same texture region: one texture holds the whole rendered line |
+| 0x009E3068 | **portrait**, one 256x256 quad | bottom | inside 0x009E0000.. which `top_hud` treats as top HUD; only skipped by the height check, tighten it |
+| 0x00A192E4 | chapter title text | bottom | not the narration |
+| 0x00A1950C, 0x00A196C0, 0x00A19748, 0x00A181D0 | hearts counter and icons | bottom | |
+| 0x00A11128-0x00A11CE8 | item box | bottom | |
+| 0x00A13A74, 0x00A13B68 | power / special weapon icon | bottom | |
+| 0x00A17E70-0x00A181C0, 0x00A0F3xx-0x00A0F6xx | background, frame | bottom | |
+| 0x0060D68C, 0x00A0D22C-0x00A0E338, 0x00A04710-0x00A04F00, 0x00A01A4C | pause screen | top label, bottom menu | |
+| 0x00A0E9D8, 0x00A0EA60, 0x00A182C4 | boss intro bottom screen | bottom | |
+
+Quad positions are in the element's own space (the narration's text starts at
+0,0), placed on screen by a transform elsewhere, not baked into the vertices.
+
+Stacked narration: in your state 1 the line's texture region holds two lines'
+glyphs, drawn over each other, so the line texture was not cleared before the
+new line was rendered into it. Same with the 60 FPS patch undone afterwards
+(the texture was already drawn). Cause to find in the text rendering path
+(PLAN phase 2, question 4).
