@@ -1,0 +1,7 @@
+[package]
+name = "funclist"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+recomp3ds = { path = "../3dsrecomp" }

@@ -1,0 +1,22 @@
+title       apollo, 0 modules
+
+                  KiB  functions   code  literals  unreached  indirect  switches    svc  dead ends
+executable       11860      49236  93.6%      4.2%       2.2%     16396       541    646        944
+modules              0          0   0.0%      0.0%       0.0%         0         0      0          0
+all              11860      49236  93.6%      4.2%       2.2%     16396       541    646        944
+
+found by    17613 calls, 29752 pointers, 0 relocations, 0 exports, 0 imports, 1870 scanned, 0 hinted, 1 entry
+thumb       1062 functions
+decoded     2852055 instructions, shared code once per function
+largest     19105 at 0037459C, 16718 at 0044C424, 14668 at 00522C28
+analysis    1.20s
+
+largest unreached runs
+  executable                   0x00C94704  2540 bytes
+  executable                   0x005E41BC  2260 bytes
+  executable                   0x008E9708  976 bytes
+  executable                   0x008E9078  968 bytes
+  executable                   0x008EA3CC  968 bytes
+  executable                   0x008EA998  964 bytes
+  executable                   0x008EAFEC  956 bytes
+  executable                   0x008E89C0  952 bytes
