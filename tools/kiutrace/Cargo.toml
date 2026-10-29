@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 zakuro-core = { path = "../zakuro/crates/zakuro-core" }
 zakuro-common = { path = "../zakuro/crates/zakuro-common" }
+zakuro-cpu = { path = "../zakuro/crates/zakuro-cpu" }
 
 [profile.release]
 debug = 1

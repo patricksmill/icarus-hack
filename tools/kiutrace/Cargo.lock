@@ -738,6 +738,7 @@ version = "0.1.0"
 dependencies = [
  "zakuro-common",
  "zakuro-core",
+ "zakuro-cpu",
 ]
 
 [[package]]

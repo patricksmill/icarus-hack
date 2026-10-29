@@ -20,8 +20,10 @@
 //!   watch <addr> <len>            add a range to the trace
 //!   trace <frames>                run instruction by instruction, printing each write to a watched range
 //!   aim <dx> <dy> <frames>        run with Zakuro's own mouse aiming captured, moving dx, dy a frame
+//!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
 //!   quads <frames>                print each 2D sprite batch flushed (0x0092F408): caller, and each quad's box
+//!   narr <x> <y> <frames>         run, also drawing the narration line on the top screen at x, y
 //!   mouse <dx> <dy> <frames>      run, adding a mouse movement of dx, dy reticle pixels per frame to
 //!                                 the aim delta where 0x00B12218 returns, as the override will
 use std::collections::HashMap;
@@ -141,10 +143,18 @@ fn main() {
                 }
             }
             "overclock" => system.cpu.overclock = num(1).max(1),
+            "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
             "quads" => {
                 for _ in 0..num(1) {
                     if !quads_frame(&mut system, input, &mut frame) {
+                        return;
+                    }
+                }
+            }
+            "narr" => {
+                for _ in 0..num(3) {
+                    if !narration_frame(&mut system, input, float(1), float(2), &mut frame) {
                         return;
                     }
                 }
@@ -279,6 +289,80 @@ fn mouse_frame(system: &mut System, input: InputState, dx: f32, dy: f32, frame: 
     true
 }
 
+/// in the top screen's battle UI pass (0x0060D39C), just after it drew the
+/// health bar, where the narration is drawn too.
+const TOP_UI_AFTER_HUD: u32 = 0x0060D60C;
+/// draws a message's line, shadow then text: r0 the message, r1 the 2D context.
+const DRAW_MESSAGE_LINE: u32 = 0x009E9A14;
+/// the top HUD's score flush, whose context the narration's message is in.
+const SCORE_FLUSH_CALLER: u32 = 0x009F2F90;
+/// the narration's message in the 2D context.
+const NARRATION: u32 = 0x3124;
+
+/// registers kept while the game runs a call the host made in its place.
+struct Saved {
+    regs: [u32; 16],
+    cpsr: zakuro_cpu::psr::Psr,
+    vfp: [u32; 32],
+    message: u32,
+    position: [u8; 8],
+}
+
+/// runs a frame instruction by instruction, and in the top screen's UI pass
+/// has the game draw the narration's line there too, at x, y.
+fn narration_frame(system: &mut System, input: InputState, x: f32, y: f32, frame: &mut u64) -> bool {
+    system.set_input(input);
+    zakuro_core::services::hid::update(system, input);
+    let deadline = system.cpu.cycles + zakuro_core::CYCLES_PER_FRAME;
+    let mut context = None;
+    let mut saved: Option<Saved> = None;
+    while system.cpu.cycles < deadline {
+        let pc = system.cpu.regs[15];
+        if pc == SPRITE_FLUSH && system.cpu.regs[14] == SCORE_FLUSH_CALLER {
+            context = Some(system.cpu.regs[0]);
+        }
+        if pc == TOP_UI_AFTER_HUD {
+            if let Some(back) = saved.take() {
+                system.cpu.regs = back.regs;
+                system.cpu.cpsr = back.cpsr;
+                system.cpu.vfp.regs = back.vfp;
+                system.memory.write_bytes(back.message + 0x14, &back.position);
+                // run the instruction the call was made in front of
+                if system.step(Some(deadline)) != StepOutcome::Ran {
+                    return false;
+                }
+                continue;
+            }
+            if let Some(context) = context {
+                let message = context + NARRATION;
+                let head = read(system, message, 8);
+                if head[0] != 0 && u32::from_le_bytes(head[4..8].try_into().unwrap()) != 0 {
+                    let position: [u8; 8] = read(system, message + 0x14, 8).try_into().unwrap();
+                    saved = Some(Saved { regs: system.cpu.regs, cpsr: system.cpu.cpsr, vfp: system.cpu.vfp.regs, message, position });
+                    let mut moved = [0u8; 8];
+                    moved[..4].copy_from_slice(&x.to_le_bytes());
+                    moved[4..].copy_from_slice(&y.to_le_bytes());
+                    system.memory.write_bytes(message + 0x14, &moved);
+                    system.cpu.regs[0] = message;
+                    system.cpu.regs[1] = context;
+                    system.cpu.regs[14] = TOP_UI_AFTER_HUD;
+                    system.cpu.regs[15] = DRAW_MESSAGE_LINE;
+                    system.cpu.cpsr.thumb = false;
+                }
+            }
+        }
+        match system.step(Some(deadline)) {
+            StepOutcome::Ran => {}
+            other => {
+                println!("stopped: {other:?}");
+                return false;
+            }
+        }
+    }
+    *frame += 1;
+    true
+}
+
 /// the 2D sprite batch flush, entered with the batch in r0.
 const SPRITE_FLUSH: u32 = 0x0092F408;
 /// sets the position of the quad being added to a batch: r0 the batch,
@@ -311,6 +395,24 @@ fn quads_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool 
             let start = read32(system, batch + 0x40);
             let pointer = read32(system, batch + 0x38);
             let count = end.wrapping_sub(start);
+            if std::env::var("KIUTRACE_BT").ok().and_then(|v| u32::from_str_radix(&v, 16).ok()) == Some(caller) {
+                // return addresses on the stack: words pointing into code just after a bl
+                let sp = system.cpu.regs[13];
+                let stack = read(system, sp, 0x400);
+                let mut chain = Vec::new();
+                for (i, c) in stack.chunks(4).enumerate() {
+                    let w = u32::from_le_bytes(c.try_into().unwrap());
+                    if (0x0010_0000..0x00C9_6000).contains(&w) && w % 2 == 0 {
+                        let before = read32(system, w.wrapping_sub(4));
+                        if before >> 24 & 0x0F == 0x0B || (before & 0x0FFF_FFF0) == 0x012F_FF30 {
+                            chain.push(format!("sp+{:X}:{w:08X}", i * 4));
+                        }
+                    }
+                }
+                let raw: Vec<String> = stack.chunks(4).take(48).map(|c| format!("{:08X}", u32::from_le_bytes(c.try_into().unwrap()))).collect();
+                println!("  stack at {sp:08X}: {}", raw.join(" "));
+                println!("  [{frame}] backtrace from {caller:08X} r0 {:08X} r4 {:08X} r5 {:08X} r6 {:08X}: {}", system.cpu.regs[0], system.cpu.regs[4], system.cpu.regs[5], system.cpu.regs[6], chain.join(" "));
+            }
             if count > 0 && count <= 0x400 {
                 let first = pointer - count * 0x60;
                 if std::env::var_os("KIUTRACE_QUADDUMP").is_some() && caller == std::env::var("KIUTRACE_QUADDUMP").ok().and_then(|v| u32::from_str_radix(&v, 16).ok()).unwrap_or(0) {
