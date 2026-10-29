@@ -12,6 +12,7 @@
 //!   circle <x> <y>                circle pad, -1..1
 //!   drag <x0> <y0> <x1> <y1> <frames>   touch and slide across frames, then let go
 //!   shot <name>                   write both screens as out/<name>_top.ppm and _bottom.ppm
+//!   shotscaled <name>             the same at the hardware renderer's scale, KIUTRACE_SCALE=<n>
 //!   save <file> / load <file>     a Zakuro saved state
 //!   scan                          list objects whose first word is an aim vtable
 //!   peek <addr> <count>           print count words at addr as hex and float
@@ -54,7 +55,10 @@ fn main() {
     // KIUTRACE_LIB=<library> runs the recompiled code, but for the functions
     // Zakuro's mouse aiming stops in
     let recompiled = std::env::var_os("KIUTRACE_LIB").map(PathBuf::from);
-    let config = Config { hardware_renderer: false, find_recompiled: false, new3ds, recompiled, ..Config::default() };
+    // KIUTRACE_SCALE=<n> draws on the host's GPU at n times the resolution,
+    // as the frontend's hardware renderer does
+    let scale: u32 = std::env::var("KIUTRACE_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let config = Config { hardware_renderer: scale > 0, resolution: scale.max(1), find_recompiled: false, new3ds, recompiled, ..Config::default() };
     let mut system = loader::load(&args[1], config).unwrap_or_else(|error| {
         eprintln!("could not load {}: {error}", args[1]);
         std::process::exit(1);
@@ -104,6 +108,13 @@ fn main() {
                 for (screen, suffix) in [(Screen::Top, "top"), (Screen::Bottom, "bottom")] {
                     let path = out.join(format!("{}_{suffix}.ppm", words[1]));
                     write_ppm(&path, screen.width(), screen.height(), &system.read_screen(screen));
+                }
+            }
+            "shotscaled" => {
+                for (screen, suffix) in [(Screen::Top, "top"), (Screen::Bottom, "bottom")] {
+                    let path = out.join(format!("{}_{suffix}.ppm", words[1]));
+                    let (image, width, height) = system.read_screen_scaled(screen);
+                    write_ppm(&path, width, height, &image);
                 }
             }
             "save" => std::fs::write(words[1], system.save_state().expect("save the state")).expect("write the state"),
