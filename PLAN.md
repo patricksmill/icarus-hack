@@ -24,6 +24,7 @@ Addresses are for the USA build (0004000000030100). Findings so far are in
 | Land battles at 1x | Zakuro: textures of a buffer written back unchanged stay scaled | fixed, built |
 | Pause menu on top | pause screen and dialogs replayed in the top passes, touches mapped | working headless, built |
 | Widescreen, any aspect | lens aspect at 0x003901C4, top 2D squeezed by pass (0x0092E4F8), mouse scaled | working, tested |
+| Mouse hover in menus | pause input 0x0060DC7C, dialog input 0x007226C4: hover as a held touch, -1 lights none | pause menu, Options, dialogs working headless, built; menus outside battle to map |
 
 ## What the dialog looks like to the game
 
@@ -222,6 +223,53 @@ scene change with or without the hook (harness limit).
 
 Cosmetic: on Options' pages, elements the bottom screen anchors to its
 edges (the OK panel in Reticle/Camera) still sit 40 px in from the top's.
+
+## Phase 4c: the mouse in menus, as on a PC
+
+Status: the pause menu, Options' pages and the dialogs over them working
+headless, built. With a stylus one option is always lit and a touch uses it
+at once. With the mouse now:
+
+- the option under it lights, with the cursor's sound, and nothing is used
+  until a click. Over no option, none is lit.
+- a key (d-pad, A, a gamepad) gives the game's cursor back: the first
+  direction or confirm press lights the option the mouse last lit, without
+  moving or using it (B goes through). The mouse moving gives it back to
+  the mouse. The pause screen opens with the game's cursor.
+- `ZAKURO_MENU_HOVER=0` turns it off. The harness has `hover x y` and
+  `unhover`.
+
+How (FINDINGS, "Menu input"): on the pause screen the hover is given to the
+page as a touch held where the mouse is, not one that began now. The game's
+own hit test then lights the option under it and plays the sound, and only
+a touch that began now uses one. When the page looked and found nothing,
+the cursor (+0x67C) is set to -1, which the game draws as none lit. The
+real touch is put back after, so nothing else sees the hover. Control
+Configuration (Options page 5) drags what is held, so it keeps the stylus's
+way. Volume's sliders and Reticle/Camera's are set by a held touch, so a
+hover over Volume's is given to the row left of the slider and over
+Reticle/Camera's counts as off the menu. A dialog only looks at a touch
+that began now, so for it the hover is checked against its buttons' boxes
+and its cursor (+0x294, -1 none, its own start) set before it compares.
+
+Checked on state 5 and from it, 30 FPS, interpreter and recompiled: the main
+page (Resume, Retreat, Options, a gap, off), keys after a hover over
+nothing (DOWN lights the last lit and stays, UP then moves), a click on
+Resume; Options' list (a gap, the back arrow, one click opens Volume);
+Volume (sliders stay at 0.8 under the hover, a click still sets SFX to
+0.33); Reticle/Camera (sliders stay, OK, Invert Vertical, the middle lights
+none); Retreat's dialog (Yes, No, the gap, off, RIGHT twice, a click on
+No). One sound each time the light moves onto an option, none off one. With
+no mouse used, the pause object after 150 frames and the screens 300 frames
+after Resume are the same as with no hooks.
+
+Next, the menus outside battle (file select, chapter select, the hub's).
+They are not the battle UI: on file select (`trace/s1.state`) the cursor's
+sound (0x11) is a command of a script, run through 0x0048CB3C's vtable calls
+into 0x00AB9810 and 0x00BB9C34, not 0x0075D420. Each needs its input and
+cursor found first. Save states in each, please: chapter select, the Fiend's
+Cauldron, Arsenal, and any other menu you use. The dialogs (0x007226C4)
+may already work there.
 
 ## Phase 5: playing without the bottom screen
 

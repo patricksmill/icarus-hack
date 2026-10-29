@@ -200,3 +200,54 @@ tracing what changed.
   0x0060D60C inside it): every frame in states 1-5, never on the title
   screen or file select. Paused, it still runs.
 
+
+## Menu input (pause screen, Options, dialogs)
+
+Found on state 5 with call logging and disassembly (PLAN phase 4c).
+
+- Input record: 0x00A3115C(record, ...) from the input singleton
+  (0x002625B8(): +0x2E touching, +0x24/+0x28 the pixel, +8/+0x14 buttons):
+  x, y, touching (byte +8), began now (byte +9), key (signed byte +0xA, -1
+  none). Keys, from the harness: 2 UP, 3 DOWN, 5 B, 6 SELECT, 8 X, 9 Y,
+  10 L and ZR, 11 ZL; 0 and 1 are the other two direction bits (LEFT and
+  RIGHT gave none on the main page), 4 button bit 0x100 (A, not seen: B
+  had closed the menu). "Began
+  now" is set on the touch's first frame only, and that is when an option
+  is used (the stylus's press, not its release).
+- 0x00A31788 -> 0x0060DC7C(ctx, playing, key, touching, began, x, y): while
+  paused (0x00B52774), the key goes to 0x00A0C5A8(pause, key) at
+  0x0060DD0C (r5), then the touch to 0x00A01DA0(pause, touching, began, x,
+  y) at 0x0060DD24 (r8, r6, r7, y in s16 as an int), the pause screen in
+  r9. 0x0060DD28 is after both.
+- Pause screen (ctx+0x243C): +4 state (2 main page, 7 Options, 4 closing),
+  +0x678 Options' page, +0x6EC the page being gone to, +0x67C the option
+  picked, drawn lit; -1 draws none lit (main page, Options' pages, both
+  screens), and keys handle it only on pages where the game uses it.
+  Main page options: 0 Resume, 1 Retreat, 2 Options, 3 Remove Display.
+- 0x00A01DA0 hands a touch to 0x00A0867C (main page) or 0x00A06188
+  (Options, when +0x678 == +0x6EC). Both hit test, then at 0x00A08820 (r1)
+  and 0x00A06384 (r4) have the option; off every option they return before.
+  A different option is picked and plays 0x0075D420(1), the cursor's sound;
+  only a touch that began now uses it (on Options' lists, one already
+  picked: the first tap picks, the second uses).
+- Options' pages: 0-2 lists (0 the back arrow, 1.. the rows), 3-4 choices,
+  5 Control Configuration (0x00A0ACF0, drags what it holds), 6
+  Reticle/Camera (0x00A0B50C; sliders in the rows above y 70 set by a held
+  touch, values at +0x698; starts with -1 picked), 7 Volume (0x00A0C2DC; a
+  held touch at x 121..288 of a row sets its slider, values at +0x6AC).
+- Dialogs, 0x007226C4(dialog), called from 0x00724738 (Retreat's: 0x14A1340C
+  in state 5): only a touch that began now picks a button, which uses it.
+  +0x28C how many buttons, +0x2A8 their boxes (4 shorts: left, right, top,
+  bottom, inclusive; Retreat's No 36..155, Yes 173..292, 154..188), +0x290
+  which cancel, +0x294 the one picked (-1 none; a direction then picks 0).
+  The picked one read into r6 at 0x00722754; a change after lights it and,
+  at 0x007229E4, plays the cursor's sound unless a touch picked it (r5).
+
+## Menus outside battle (started)
+
+File select (`trace/s1.state`, the three books): RIGHT moves to the next
+book and plays sound 0x11 through 0x0036C438, from 0x00BB9C34 (a UI
+element's sound) via 0x00AB9810, called through a vtable from 0x0048CB3C,
+which runs a list of commands (vtable +0x20, +0x24). So these menus are
+scripted, not the battle UI's code, and 0x0075D420 is not used. Their
+input and cursor are still to find.

@@ -12,6 +12,9 @@ a PC with a mouse and keyboard, on one screen of any shape:
 - **Widescreen at any aspect**: a wider view, not a stretched one, with no
   pop-in at the edges, the HUD the right shape and by the window's edges, and
   aim that is correct across the whole width. The window can be any size.
+- **The mouse in menus as on a PC**: the option under the pointer lights,
+  a click uses it, and over nothing, nothing is lit. Keys and gamepads get
+  the game's own cursor back.
 - **60 FPS**, plus a smaller HUD and reticle, and a CPU overclock for heavy
   scenes.
 
@@ -21,7 +24,8 @@ emulator (branch `kiu-mouse`), from code.bin recompiled by 3dsrecomp
 can change what they do, and the rest runs native. Gameplay must stay the
 same: each hook is checked against unhooked play over the same frames.
 
-Out of scope for now: online (Together) mode and the menus outside battle.
+Out of scope for now: online (Together) mode, and the menus outside battle
+but for the mouse in them.
 
 `PLAN.md` has the status of each feature and the work left.
 `analysis/FINDINGS.md` has the addresses and how the game works.

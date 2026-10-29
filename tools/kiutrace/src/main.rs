@@ -27,6 +27,8 @@
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   pausetop                      draw the pause menu on the top screen too, with Zakuro's hook
+//!   hover <x> <y> / unhover       move the mouse over the bottom screen's pixel, or off it, with
+//!                                 Zakuro's menu hover on: menus light what is under it, keys give them back
 //!   wide <aspect>                 widen the top screen to aspect (width / height), with Zakuro's hooks
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
 //!   calls <addr> <frames>         print r0..r3, lr, sp, s0..s3 and r0's first words each time addr runs, up to 8 a frame
@@ -179,6 +181,11 @@ fn main() {
             "portraits" => system.aim_mouse.get_or_insert_with(Default::default).portrait_scale = float(1),
             "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
             "pausetop" => system.aim_mouse.get_or_insert_with(Default::default).pause_on_top = true,
+            "hover" | "unhover" => {
+                let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                aim_mouse.menu_hover = true;
+                aim_mouse.hover((words[0] == "hover").then(|| (float(1), float(2))));
+            }
             "wide" => system.aim_mouse.get_or_insert_with(Default::default).widen = float(1) / (5.0 / 3.0),
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
             "calls" => {
