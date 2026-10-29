@@ -128,7 +128,7 @@ Sprite flush callers (return addresses into 0x0092F408), by element:
 | 0x009E3068 | **portrait**, one 256x256 quad | bottom | inside 0x009E0000.. which `top_hud` treats as top HUD; only skipped by the height check, tighten it |
 | 0x00A192E4 | chapter title text | bottom | not the narration |
 | 0x00A1950C, 0x00A196C0, 0x00A19748, 0x00A181D0 | hearts counter and icons | bottom | |
-| 0x00A11128-0x00A11CE8 | item box | bottom | |
+| 0x00A11128-0x00A11CE8 | power panel (was listed as the item box) | bottom | three boxes, the current power in the middle one, 49..87 x 202..240 |
 | 0x00A13A74, 0x00A13B68 | power / special weapon icon | bottom | |
 | 0x00A17E70-0x00A181C0, 0x00A0F3xx-0x00A0F6xx | background, frame | bottom | |
 | 0x0060D68C, 0x00A0D22C-0x00A0E338, 0x00A04710-0x00A04F00, 0x00A01A4C | pause screen | top label, bottom menu | |
@@ -163,3 +163,40 @@ glyphs, drawn over each other, so the line texture was not cleared before the
 new line was rendered into it. Same with the 60 FPS patch undone afterwards
 (the texture was already drawn). Cause to find in the text rendering path
 (PLAN phase 2, question 4).
+
+## Powers (miracles, `MRCL` in the game's names)
+
+Found by tapping the power panel in state 1 (Health Recovery, 3 uses) and
+tracing what changed.
+
+- Power panel: ctx+0xB64, in the bottom battle 2D context (0x14155330 in
+  state 1, the battle UI object 0x00EE3098's +0x140). Words: +0 flags
+  (0x800000: no power can be used now), +4 touch state (0x40000000: a power
+  asked for, 0x80000000 with it; 0x28000000 busy), +8 command, +0x118 the
+  current power's place in the list, +0x184 the list's length, +0x188 the
+  list (bytes naming entries). Entry e, 8 bytes at +0x11C + e*8: uses left
+  (byte), +1 a byte 0x006DFF2C checks, +2 id (u16, Health Recovery 0x95),
+  +5 1 while it can't be used now (Health Recovery at full health).
+- Touch: 0x00A129F0 (from the bottom pass at 0x0060DCD8) on a short tap of
+  a box (left, middle, right: current - 1, current, current + 1), if it has
+  uses and the panel isn't busy, sets +4 |= 0xC0000000, +0x19A = the place,
+  +0x19B = the box, +0x1A0 = 0.1, and plays sound 0xB.
+- Update: 0x00A17A10(panel), from 0x003EF664. Refreshes +0x121 for the three
+  shown, then, if +4 has 0x40000000, the panel isn't locked and the place's
+  power can be used, writes the command (keeping `& 0x007E7FEE`):
+  `id << 23 | place << 17 | box << 15 | 1` (0x4A808001 for Health Recovery
+  in the middle box), clears +4's top two bits and sets +0x19A to 0xFF. If
+  it can't, the request stays set.
+- Command: 0x00A30D00(UI object, 0 while playing) handles bit 0 with
+  0x003636F8(0x00E3F728, player, id) (player able, flags 0x44 clear, uses
+  left), then 0x00A17828 for the panel's feedback; the word is cleared after
+  (0x00A317A0). Below: 0x0038A3BC(0x00E40978, player, id) ->
+  0x003A4CE4 (refuses while running) -> 0x003CC344 -> 0x005A734C, the
+  inventory count (0x00E40984 for Health Recovery: 3 -> 2).
+- The fork's power key writes that command at 0x00A30D00's entry, when a
+  touch of the middle box would ask for it (not locked, not busy, uses
+  left, usable now).
+- A battle is shown by the top battle pass (0x0060D39C; the fork's hook at
+  0x0060D60C inside it): every frame in states 1-5, never on the title
+  screen or file select. Paused, it still runs.
+

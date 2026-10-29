@@ -40,7 +40,7 @@ From sprite logging in a Chapter 1 air battle:
 - The texture is not set inside the batch. It is bound earlier, through the
   game's material and render state.
 - Bottom-screen callers seen so far: 0x00A0F3xx-0x00A0F6xx (frame),
-  0x00A11128-0x00A11CE8 (item box), 0x00A13670-0x00A13B68 (special weapon
+  0x00A11128-0x00A11CE8 (power panel), 0x00A13670-0x00A13B68 (special weapon
   icons), 0x00A17E70-0x00A181C0 (background), 0x00A192E4 (dialog line),
   0x00A1950C and 0x00A196C0 (chapter title, hearts counter).
 
@@ -224,6 +224,16 @@ Cosmetic: on Options' pages, elements the bottom screen anchors to its
 edges (the OK panel in Reticle/Camera) still sit 40 px in from the top's.
 
 ## Phase 5: playing without the bottom screen
+
+Status: step 1 for powers built, working headless. The ZL key (1 in your
+settings) uses the current power while the mouse is captured, in a battle
+(its top UI drawn in the last 3 frames) and not paused; anywhere else it
+stays ZL. It's no tap: it writes the command the panel's own update writes
+for a touch (FINDINGS, "Powers"), and only when a touch would. Held, it
+uses one. Checked on state 1 (Health Recovery 3 -> 2, the same as a touch),
+the boss intro and an air state with no power (nothing), paused and file
+select (ZL). Next: picking another power (the panel's left and right
+boxes), then items.
 
 1. **Keys for touch actions.** Using a power or an item means tapping the
    bottom screen. Add bindings in the fork that tap the right spot while the

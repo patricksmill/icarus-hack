@@ -18,9 +18,11 @@
 //!   peek <addr> <count>           print count words at addr as hex and float
 //!   poke <addr> <value>           write a word, a float when it has a point
 //!   code <addr> <word>            write a word of code, past the page's permissions
+//!   dump <addr> <len> <name>      write len bytes of memory at addr as out/<name>.bin
 //!   watch <addr> <len>            add a range to the trace
 //!   trace <frames>                run instruction by instruction, printing each write to a watched range
 //!   aim <dx> <dy> <frames>        run with Zakuro's own mouse aiming captured, moving dx, dy a frame
+//!   power                         press the power key as Zakuro does: in a battle, uses the current power
 //!   mirror                        draw the bottom screen's hearts, item box and power icon on top too
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
@@ -131,6 +133,11 @@ fn main() {
                 }
             }
             "watch" => watches.push((num(1), num(2))),
+            "dump" => {
+                let mut bytes = vec![0u8; num(2) as usize];
+                system.memory.read_bytes(num(1), &mut bytes);
+                let _ = std::fs::write(out.join(format!("{}.bin", words[3])), &bytes);
+            }
             "code" => {
                 if !system.memory.write32_privileged(num(1), num(2)) {
                     println!("  could not write {:08X}", num(1));
@@ -157,6 +164,15 @@ fn main() {
                         return;
                     }
                 }
+            }
+            "power" => {
+                let frame = system.frames;
+                let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                let in_battle = aim_mouse.in_battle(frame);
+                if in_battle {
+                    aim_mouse.use_power(frame);
+                }
+                println!("  [{frame}] power key: {}", if in_battle { "uses the current power" } else { "ZL, not in a battle" });
             }
             "overclock" => system.cpu.overclock = num(1).max(1),
             "mirror" => system.aim_mouse.get_or_insert_with(Default::default).mirror_bottom = true,
