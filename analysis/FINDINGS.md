@@ -35,6 +35,17 @@ means lowering |m[4]| (or raising aspect) before the stereo code runs.
 The literal 400/240 (5 copies) is **not** the projection: the three
 functions that read it are animation timers (t × 1/0.6 s).
 
+Battle camera, from state 1: 0x00E14BEC, its lens at +4 0x00E14BB4
+(perspective, vtable 0x00D20080): near 3.5 (+8), far 40000 (+0xC), fovy
+0.785 (+0x10), aspect 1.6667 (+0x14). Two orthographic lenses (vtable
+0x00D200B0) sit at 0x00E14BCC (top, -200..200 x -120..120) and 0x00E14DAC
+(bottom, -160..160). Nothing writes the aspect during play; writing it and
+clearing bit 2 of camera+8 rebuilds the projection with it, and the view
+widens (culling and the aim ray with it). Callers of 0x003901C4 each
+frame: 0x00360168 (aim ray, twice), 0x007C48EC (reticle), 0x00911698 and
+0x00911304 (render submit). The ground turn from the reticle scales with
+atan(tan(fovy/2) x aspect).
+
 ## Game camera fields
 
 `FUN_0042F534(mgr, 0, 1)` returns the active game camera. Seen in

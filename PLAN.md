@@ -23,6 +23,7 @@ Addresses are for the USA build (0004000000030100). Findings so far are in
 | Stacked dialog text | probably Zakuro's GPU texture cache | to confirm (software rasterizer test) |
 | Land battles at 1x | Zakuro: textures of a buffer written back unchanged stay scaled | fixed, built |
 | Pause menu on top | pause screen and dialogs replayed in the top passes, touches mapped | working headless, built |
+| Widescreen, any aspect | lens aspect at 0x003901C4, top 2D squeezed by pass (0x0092E4F8), mouse scaled | working, tested by you |
 
 ## What the dialog looks like to the game
 
@@ -257,6 +258,19 @@ k times wider squeezed into them, where k = (window width / height) /
 every top-screen 2D draw gets squeezed by 1/k so it comes out the right
 shape. This is how Darkshade's mod works (FINDINGS, "Darkshade's ... patch"),
 with k read every frame instead of fixed at 0.9375 or 0.714.
+
+Status: steps 1-5 built and working headless at 16:9, 21:9 and 32:9
+(air, ground, boss, pause, dialog, 30 and 60 FPS); 5:3 plays identically
+to no hooks over 300 frames. Step 2 took one hook: the perspective lens
+(vtable 0x00D20080, fovy +0x10, aspect +0x14, at 0x00E14BB4 in battle)
+gets the game's aspect times k at the projection getter's entry, and the
+camera's cached projection (bit 2 of camera+8) is cleared when that
+changes. Culling and the aim's ray follow it, nothing seen missing at the
+edges. The ground turn grows with the view's width (atan of its half
+width), so horizontal mouse movement is scaled to keep the same degrees
+(140.1 per test move at all three shapes), and by 1/k in the air. Tested
+by you: aiming at the edges and quick camera turns work. Left: step 6,
+only if raising Resolution costs too much.
 
 ### Steps
 

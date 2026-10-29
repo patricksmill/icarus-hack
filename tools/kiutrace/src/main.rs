@@ -25,7 +25,9 @@
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   pausetop                      draw the pause menu on the top screen too, with Zakuro's hook
+//!   wide <aspect>                 widen the top screen to aspect (width / height), with Zakuro's hooks
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
+//!   calls <addr> <frames>         print r0..r3, lr, sp, s0..s3 and r0's first words each time addr runs, up to 8 a frame
 //!   quads <frames>                print each 2D sprite batch flushed (0x0092F408): caller, and each quad's box
 //!   narr <x> <y> <frames>         run, also drawing the narration line on the top screen at x, y
 //!   mouse <dx> <dy> <frames>      run, adding a mouse movement of dx, dy reticle pixels per frame to
@@ -161,7 +163,15 @@ fn main() {
             "portraits" => system.aim_mouse.get_or_insert_with(Default::default).portrait_scale = float(1),
             "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
             "pausetop" => system.aim_mouse.get_or_insert_with(Default::default).pause_on_top = true,
+            "wide" => system.aim_mouse.get_or_insert_with(Default::default).widen = float(1) / (5.0 / 3.0),
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
+            "calls" => {
+                for _ in 0..num(2) {
+                    if !calls_frame(&mut system, input, num(1), &mut frame) {
+                        return;
+                    }
+                }
+            }
             "quads" => {
                 for _ in 0..num(1) {
                     if !quads_frame(&mut system, input, &mut frame) {
@@ -223,6 +233,36 @@ fn run_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool {
         println!("stopped: {outcome:?} at frame {frame}, {}", system.fatal_errors.join("; "));
         return false;
     }
+    true
+}
+
+/// runs a frame one instruction at a time, printing the registers each
+/// time address is about to run.
+fn calls_frame(system: &mut System, input: InputState, address: u32, frame: &mut u64) -> bool {
+    system.set_input(input);
+    zakuro_core::services::hid::update(system, input);
+    let deadline = system.cpu.cycles + zakuro_core::CYCLES_PER_FRAME;
+    let mut count = 0;
+    while system.cpu.cycles < deadline {
+        if system.cpu.regs[15] == address && count < 8 {
+            count += 1;
+            let r = system.cpu.regs;
+            let s: Vec<String> = (0..4).map(|i| format!("{}", f32::from_bits(system.cpu.vfp.regs[i]))).collect();
+            let words: Vec<String> = (0..8).map(|i| format!("{:08X}", read32(system, r[0].wrapping_add(i * 4)))).collect();
+            println!(
+                "  [{frame}] {address:08X} r0 {:08X} r1 {:08X} r2 {:08X} r3 {:08X} lr {:08X} sp {:08X} s0..3 {} [r0] {}",
+                r[0], r[1], r[2], r[3], r[14], r[13], s.join(" "), words.join(" ")
+            );
+        }
+        match system.step(Some(deadline)) {
+            StepOutcome::Ran => {}
+            other => {
+                println!("stopped: {other:?}");
+                return false;
+            }
+        }
+    }
+    *frame += 1;
     true
 }
 
