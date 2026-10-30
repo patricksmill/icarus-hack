@@ -23,7 +23,7 @@
 //!   trace <frames>                run instruction by instruction, printing each write to a watched range
 //!   aim <dx> <dy> <frames>        run with Zakuro's own mouse aiming captured, moving dx, dy a frame
 //!   power                         press the power key as Zakuro does: in a battle, uses the current power
-//!   mirror                        draw the bottom screen's hearts, item box and power icon on top too
+//!   mirror                        draw the bottom screen's hearts, item box, power icon and pickups on top too
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   pausetop                      draw the pause menu on the top screen too, with Zakuro's hook

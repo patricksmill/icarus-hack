@@ -130,6 +130,7 @@ Sprite flush callers (return addresses into 0x0092F408), by element:
 | 0x00A1950C, 0x00A196C0, 0x00A19748, 0x00A181D0 | hearts counter and icons | bottom | |
 | 0x00A11128-0x00A11CE8 | power panel (was listed as the item box) | bottom | three boxes, the current power in the middle one, 49..87 x 202..240 |
 | 0x00A13A74, 0x00A13B68 | power / special weapon icon | bottom | |
+| 0x009EA550, 0x009EA800, 0x009EAB24 | "You got treasure!" popup: 9-slice box, the item's icon, the two text lines | bottom | 23..301 x 118..191, slides in from the left, about 200 frames, fades out |
 | 0x00A17E70-0x00A181C0, 0x00A0F3xx-0x00A0F6xx | background, frame | bottom | |
 | 0x0060D68C, 0x00A0D22C-0x00A0E338, 0x00A04710-0x00A04F00, 0x00A01A4C | pause screen | top label, bottom menu | |
 | 0x00A0E9D8, 0x00A0EA60, 0x00A182C4 | boss intro bottom screen | bottom | |
@@ -163,6 +164,14 @@ glyphs, drawn over each other, so the line texture was not cleared before the
 new line was rendered into it. Same with the 60 FPS patch undone afterwards
 (the texture was already drawn). Cause to find in the text rendering path
 (PLAN phase 2, question 4).
+
+Pickup popup, from your state 8 (6.state of 29 Oct, the Sagittarius Bow):
+the popup is its own object at the bottom UI's +0xDC, drawn by
+0x009EA06C(popup, ctx), which only reads it (no timers advanced in the
+draw). The background drawing 0x00A17F70 calls it at 0x00A18368 in a
+normal battle frame, after the portraits, once 0x00B524D8() says so; two
+other paths (0x00A18094, and a tail call at 0x00A18030) are for the
+bottom UI's other states (+0 bits 0x1000, 0x100000), not seen yet.
 
 ## Powers (miracles, `MRCL` in the game's names)
 

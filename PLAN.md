@@ -181,6 +181,11 @@ call's target and arguments, and the next frame's top pass makes the call
 again, between the portraits and the narration. Its sprites go under the score
 (hearts) or the health bar (item box, power icon), at the HUD scale; the
 chapter title's (0x00A192E4) are left off. ZAKURO_MIRROR_BOTTOM=0 turns it off.
+The pickup popup ("You got treasure!", 0x009EA06C at 0x00A18368) is
+mirrored the same way, at the top screen's middle under the HUD's top
+row, shown and gone with the bottom one's. Checked on state 8 (the
+Sagittarius Bow) at 5:3 and 16:9: the 3D scene after 360 frames is the
+same with it.
 Checked over 10 s of play: same score, position and pose as without it.
 
 Side finding: the reticle hook now shrinks only the size handed to its
