@@ -356,3 +356,41 @@ is large on this laptop: the 30.49 ms block is an outlier, and each setting's
 fastest and slowest blocks are 25% or more apart. The ranges barely overlap,
 so the direction is clear but the size is approximate. Still well short of
 100 refreshes/s.
+
+## Glow texture and depth-memory reuse, 16:45 EDT
+
+After the alias copies, the battle still had two readbacks every frame:
+
+- **Texture read, `0x1F080000`:** the frame is drawn 256×512 and sampled
+  as a 240×400 RGBA8 texture for the glow. `alias_texture` gives the texture
+  a surface of its own width through the same GPU tile copy, then the
+  existing drawn-texture path copies from it. The glow now samples the
+  scaled frame: top screens differ from the readback path by at most 7/255
+  (mean ≈1) in states 1, 2 and 5; states 3 and 4 and every bottom screen
+  are identical.
+- **Overlapping surfaces, `0x1F300000`:** the glow reuses the start of the
+  256×512 depth buffer for 64×64, 32×32 and 16×16 targets, then a 128×256
+  target that overlaps the depth's dirty rows. That 128×256 draw is one
+  indexed quad over the whole buffer, blending with destination factor zero.
+  A draw proven to cover its whole buffer (two unclipped, unculled triangles
+  corner to corner, split along a diagonal) that writes all channels with no
+  destination-reading blend, logic op, alpha, depth or stencil test now takes
+  the bytes from other surfaces (`relinquish`) instead of writing them back.
+  Draws of six vertices or fewer are decoded on the CPU so the check can run
+  their vertex shader; the GPU still shades them. Screenshots match the
+  glow-texture build exactly in all five states.
+
+With both, the GPU profile reports no readbacks and 0.0 ms of CPU
+conversion in this scene. State 1 at 3×, alternating builds, same instruction
+totals:
+
+| Build | ms/refresh (six 300-refresh blocks) |
+| --- | --- |
+| `3f0f7fc` (alias copies) | 22.97, 24.65, 22.24, 24.78, 21.91, 24.39 |
+| `b8ea910` (this change) | 9.02, 8.17, 9.16, 8.29, 8.43, 8.32 |
+
+About 8.6 ms/refresh, or 116 uncapped refreshes/s, against about 23.5 ms on
+the same machine in the same session. The machine was slower than in the
+earlier comparison, so compare ratios, not absolute times. This is emulation
+throughput at the console's game rate, not 100+ distinct game frames per
+second; that still needs the timing work in section 5.
