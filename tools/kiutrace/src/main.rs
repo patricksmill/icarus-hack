@@ -29,9 +29,13 @@
 //!   pausetop                      draw the pause menu on the top screen too, with Zakuro's hook
 //!   hover <x> <y> / unhover       move the mouse over the bottom screen's pixel, or off it, with
 //!                                 Zakuro's menu hover on: menus light what is under it, keys give them back
+//!   shown                         print what Zakuro's hooks see shown: a battle, the pause menu, the Fiend's Cauldron
 //!   wide <aspect>                 widen the top screen to aspect (width / height), with Zakuro's hooks
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
 //!   calls <addr> <frames>         print r0..r3, lr, sp, s0..s3 and r0's first words each time addr runs, up to 8 a frame
+//!   ran <frames> <file>           write each function that ran in every one of the frames to out/<file>, and in any
+//!                                 of them to out/<file>.any, by analysis/functions.txt
+//!   entered <value> <frames>      print each function entered with value in r0, once each (run from the project, for analysis/functions.txt)
 //!   quads <frames>                print each 2D sprite batch flushed (0x0092F408): caller, and each quad's box
 //!   narr <x> <y> <frames>         run, also drawing the narration line on the top screen at x, y
 //!   mouse <dx> <dy> <frames>      run, adding a mouse movement of dx, dy reticle pixels per frame to
@@ -186,11 +190,57 @@ fn main() {
                 aim_mouse.menu_hover = true;
                 aim_mouse.hover((words[0] == "hover").then(|| (float(1), float(2))));
             }
+            "shown" => {
+                let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                let frames = system.frames;
+                println!("battle {} pause {} cauldron {}", aim_mouse.in_battle(frames), aim_mouse.pause_menu_shown(frames), aim_mouse.cauldron_shown(frames));
+            }
             "wide" => system.aim_mouse.get_or_insert_with(Default::default).widen = float(1) / (5.0 / 3.0),
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
             "calls" => {
                 for _ in 0..num(2) {
                     if !calls_frame(&mut system, input, num(1), &mut frame) {
+                        return;
+                    }
+                }
+            }
+            "ran" => {
+                let list = std::fs::read_to_string("analysis/functions.txt").expect("read analysis/functions.txt");
+                let functions: std::collections::HashSet<u32> = list.lines().filter_map(|line| u32::from_str_radix(line.split_whitespace().next()?, 16).ok()).collect();
+                let mut every: Option<std::collections::BTreeSet<u32>> = None;
+                let mut any = std::collections::BTreeSet::new();
+                for _ in 0..num(1) {
+                    let mut this = std::collections::BTreeSet::new();
+                    system.set_input(input);
+                    zakuro_core::services::hid::update(&mut system, input);
+                    let deadline = system.cpu.cycles + zakuro_core::CYCLES_PER_FRAME;
+                    while system.cpu.cycles < deadline {
+                        let pc = system.cpu.regs[15];
+                        if functions.contains(&pc) {
+                            this.insert(pc);
+                        }
+                        if !matches!(system.step(Some(deadline)), StepOutcome::Ran) {
+                            println!("stopped");
+                            return;
+                        }
+                    }
+                    frame += 1;
+                    any.extend(this.iter().copied());
+                    every = Some(match every {
+                        Some(every) => every.intersection(&this).copied().collect(),
+                        None => this,
+                    });
+                }
+                let text = |set: &std::collections::BTreeSet<u32>| set.iter().map(|pc| format!("{pc:08X}\n")).collect::<String>();
+                std::fs::write(out.join(words[2]), text(&every.unwrap_or_default())).expect("write the functions");
+                std::fs::write(out.join(format!("{}.any", words[2])), text(&any)).expect("write the functions");
+            }
+            "entered" => {
+                let list = std::fs::read_to_string("analysis/functions.txt").expect("read analysis/functions.txt");
+                let functions = list.lines().filter_map(|line| u32::from_str_radix(line.split_whitespace().next()?, 16).ok()).collect();
+                let mut seen = std::collections::HashSet::new();
+                for _ in 0..num(2) {
+                    if !entered_frame(&mut system, input, num(1), &functions, &mut seen, &mut frame) {
                         return;
                     }
                 }
@@ -276,6 +326,29 @@ fn calls_frame(system: &mut System, input: InputState, address: u32, frame: &mut
                 "  [{frame}] {address:08X} r0 {:08X} r1 {:08X} r2 {:08X} r3 {:08X} lr {:08X} sp {:08X} s0..3 {} [r0] {}",
                 r[0], r[1], r[2], r[3], r[14], r[13], s.join(" "), words.join(" ")
             );
+        }
+        match system.step(Some(deadline)) {
+            StepOutcome::Ran => {}
+            other => {
+                println!("stopped: {other:?}");
+                return false;
+            }
+        }
+    }
+    *frame += 1;
+    true
+}
+
+/// runs a frame, printing each function called with value in r0 the first
+/// time it is, by functions, analysis/functions.txt's starts.
+fn entered_frame(system: &mut System, input: InputState, value: u32, functions: &std::collections::HashSet<u32>, seen: &mut std::collections::HashSet<(u32, u32)>, frame: &mut u64) -> bool {
+    system.set_input(input);
+    zakuro_core::services::hid::update(system, input);
+    let deadline = system.cpu.cycles + zakuro_core::CYCLES_PER_FRAME;
+    while system.cpu.cycles < deadline {
+        let r = system.cpu.regs;
+        if r[0] == value && functions.contains(&r[15]) && seen.insert((r[15], r[14])) {
+            println!("  [{frame}] {:08X} lr {:08X} r1 {:08X} r2 {:08X}", r[15], r[14], r[1], r[2]);
         }
         match system.step(Some(deadline)) {
             StepOutcome::Ran => {}

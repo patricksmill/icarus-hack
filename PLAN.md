@@ -279,6 +279,27 @@ cursor found first. Save states in each, please: chapter select, the Fiend's
 Cauldron, Arsenal, and any other menu you use. The dialogs (0x007226C4)
 may already work there.
 
+## Phase 4d: the Fiend's Cauldron in one window (paused)
+
+Goal: the cauldron on one screen, drawn by the game, no crops. Recommended:
+the bottom screen as the picture, widened to the window's shape like the
+top screen in battle, with the top screen's hint, hearts and intensity
+marker drawn into it at its sides. The bottom screen has everything you
+touch and the 3D; the top has information. Moving the 3D to the top
+instead is the same research and more remapping.
+
+Done: telling the screen is shown, and whether it pours
+(`AimMouse::cauldron_shown`, `cauldron_pouring`, FINDINGS "The Fiend's
+Cauldron"). Harness commands for finding a screen's code: `ran`,
+`entered`, `shown`.
+
+Next, research: how the cauldron's pictures, bar, buttons and pot are
+drawn (not the battle UI's sprite batch, not the text layer loop), each
+screen's camera for them, and whether the top's elements can be drawn one
+by one into the bottom pass. Then: widen the bottom screen's view while
+the cauldron shows, draw the top's elements into it, and show the bottom
+screen alone.
+
 ## Phase 5: playing without the bottom screen
 
 Status: step 1 for powers built, working headless. The ZL key (1 in your

@@ -264,3 +264,52 @@ element's sound) via 0x00AB9810, called through a vtable from 0x0048CB3C,
 which runs a list of commands (vtable +0x20, +0x24). So these menus are
 scripted, not the battle UI's code, and 0x0075D420 is not used. Their
 input and cursor are still to find.
+
+## The Fiend's Cauldron (started)
+
+States: `trace/s10.state` (your 9.state of 29 Oct, the bar), `s11` chapter
+select just before it, `s12` the bar, `s13` just after Move Out (your 1-3
+of 29 Oct, 19:06).
+
+- Its 2D is not the battle UI's: nothing goes through the sprite batch
+  flush (0x0092F408) or a 2D pass start (0x0092E4F8) but the dialog
+  context's corner icon. It is drawn by the scripted layout system.
+- Bottom screen boxes, from a screenshot (bottom pixels): "Try This?" tag
+  y 0..12 above the bar, bar x 22..322 y 13..30, the skull dial y 40..80
+  sliding along the bar with the value, pan and pot x 70..250 y 75..190,
+  the bet counter x 218..310 y 143..170, Back x 10..45 y 205..238, Move Out
+  x 60..250 y 185..240. The top screen's marker stem meets the bar at the
+  same value 40 px to the right (top x = bottom x + 40), as for the pause
+  menu.
+- 0x0067E468 (vtable 0x00D00248, +0x10) binds a parameter table of the
+  screen's parts by name (startBody_ "GO" = Move Out, returnBody_ "return"
+  = Back, level_bar_ "Level_Bar", saturn_pot_ "Saturn_Pot", go_uranai_,
+  saturn_dish_, ...): an object at 0x14B91158, nothing calls into it per
+  frame. Animation entries naming the parts (vtables 0x00CFC4DC,
+  0x00CEC7D0) sit at 0x14914668.. with an owner 0x14050A50, also not used
+  per frame.
+- Per frame, the screen runs as tasks from the task loop (lr 0x00417680).
+  Only here, against states 1-9 (`ran` in the harness): tasks with vtables
+  0x00CEE170, 0x00CF7344, 0x00CF9310, 0x00CF9338, 0x00CF9AEC, 0x00CF9FE4,
+  0x00CFA00C, 0x00CFA330 (objects 0x14051270, 0x1406A950, 0x1406C358,
+  0x14063858, 0x14045F68, 0x14051C30, 0x1404B0A8, 0x140554D8). Which of
+  them are the cauldron's and which any menu between chapters has is
+  still to tell, with a state on another menu (chapter select).
+- Telling it's shown (the fork's `AimMouse::cauldron_shown`): the pot's
+  task (vtable 0x00CF9AEC, 0x14045DB0 in s12) runs 0x00251624 every frame
+  while the bar is up, and 0x00251C40 while it pours after Move Out (its
+  update pointer moves on); neither runs on chapter select, after the
+  pour (a black fade, then the battle loads) or in battle (states 1-9,
+  11). Checked with the harness's `shown`: on in 10, 12, 13, off in 11, 4
+  and 5, on for about 90 frames of the pour from 13, then off.
+- While pouring, the pan lifts to the top of the bottom screen (y 10..70)
+  and the bet counter with it; the bar is gone and the top screen fades.
+- The loop at 0x00A35750..0x00A35C1C, which draws through the 3D renderer
+  (0x00F2DC9C) with a projection for the top (0x00DB72D0, once for each
+  eye at x +-18.3) or the bottom (0x00DB7290), draws only the text lines
+  ("fnt_%02d"): with its draws (0x00909ACC at 0x00A35B00, 0x00A35BC8)
+  skipped, only the hint line is gone. The pictures, bar, buttons and the
+  3D pot are drawn some other way, still to find.
+- Tried and dropped: composing the window from crops of the two screens'
+  pictures in the presenter. It works but looks pasted together (cut
+  edges, boxes of the bottom screen's background).
