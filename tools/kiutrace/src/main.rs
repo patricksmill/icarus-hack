@@ -7,6 +7,9 @@
 //!
 //! script commands, one per line, # for comments:
 //!   run <frames>                  run with the current input
+//!   bench <frames>                time emulation without presentation; warm up with run first
+//!   timed <frames>                bench with host wall times per execution path (adds timing overhead)
+//!   profile <frames>              sample host-step PCs (biased toward interpreted code)
 //!   hold <buttons...>             hold buttons (A B X Y L R START SELECT UP DOWN LEFT RIGHT ZL ZR), none releases
 //!   touch <x> <y> / untouch       touch the bottom screen at a pixel, or let go
 //!   circle <x> <y>                circle pad, -1..1
@@ -18,6 +21,7 @@
 //!   peek <addr> <count>           print count words at addr as hex and float
 //!   poke <addr> <value>           write a word, a float when it has a point
 //!   code <addr> <word>            write a word of code, past the page's permissions
+//!   checkcode                    recheck the library after loading a state or patching code
 //!   dump <addr> <len> <name>      write len bytes of memory at addr as out/<name>.bin
 //!   watch <addr> <len>            add a range to the trace
 //!   trace <frames>                run instruction by instruction, printing each write to a watched range
@@ -66,6 +70,9 @@ use zakuro_core::{Config, FrameOutcome, StepOutcome, System};
 const AIM_VTABLES: [(u32, &str); 3] = [(0x00CEDA50, "aim (stub input)"), (0x00CF1B40, "aim (0x76E854)"), (0x00CF1B94, "aim (0x76EBF0)")];
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .target(env_logger::Target::Stdout)
+        .init();
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
         eprintln!("usage: kiutrace <rom> <script> [out dir]");
@@ -82,12 +89,17 @@ fn main() {
     // KIUTRACE_SCALE=<n> draws on the host's GPU at n times the resolution,
     // as the frontend's hardware renderer does
     let scale: u32 = std::env::var("KIUTRACE_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
-    let config = Config { hardware_renderer: scale > 0, resolution: scale.max(1), find_recompiled: false, new3ds, recompiled, ..Config::default() };
+    // Match the frontend's shared-device path; KIUTRACE_DIRECT also asks for
+    // the screen handles each refresh, without a window or display wait.
+    let direct = std::env::var_os("KIUTRACE_DIRECT").is_some();
+    let device = direct.then(|| std::sync::Arc::new(zakuro_gpu::SharedDevice::new().expect("create the shared GPU device")));
+    let config = Config { hardware_renderer: scale > 0, resolution: scale.max(1), device, find_recompiled: false, new3ds, recompiled, ..Config::default() };
     let mut system = loader::load(&args[1], config).unwrap_or_else(|error| {
         eprintln!("could not load {}: {error}", args[1]);
         std::process::exit(1);
     });
-    if let Some(library) = &mut system.recompiled {
+    // A comparison with the unhooked library must use a script with no hooks.
+    if let Some(library) = system.recompiled.as_mut().filter(|_| std::env::var_os("KIUTRACE_NO_HOOKS").is_none()) {
         for address in zakuro_core::aim_mouse::PLACES {
             println!("interpreting at 0x{address:08X}: {} functions", library.interpret_at(address));
         }
@@ -106,11 +118,45 @@ fn main() {
         let float = |i: usize| -> f32 { words.get(i).and_then(|w| w.parse().ok()).unwrap_or(0.0) };
         println!("[{frame}] {line}");
         match words[0] {
-            "run" => {
+            "run" | "bench" | "profile" | "timed" => {
+                if words[0] == "profile" {
+                    system.enable_profiler();
+                }
+                if words[0] == "timed" {
+                    system.host_timings = Some(zakuro_core::HostTimings::default());
+                }
+                let start = std::time::Instant::now();
+                let before = (system.interpreted_instructions, system.recompiled_instructions);
                 for _ in 0..num(1) {
                     if !run_frame(&mut system, input, &mut frame) {
                         return;
                     }
+                    if direct {
+                        for screen in [Screen::Top, Screen::Bottom] {
+                            std::hint::black_box(system.gpu_screen(screen));
+                        }
+                    }
+                }
+                let seconds = start.elapsed().as_secs_f64();
+                if words[0] != "run" && num(1) > 0 {
+                    let interpreted = system.interpreted_instructions - before.0;
+                    let recompiled = system.recompiled_instructions - before.1;
+                    println!(
+                        "  {} frames in {seconds:.3}s: {:.2} ms/frame, {:.1} emulated refreshes/s; {interpreted} interpreted, {recompiled} recompiled instructions; GPU {}",
+                        num(1), seconds * 1000.0 / num(1) as f64, num(1) as f64 / seconds, system.gpu.draws_on_gpu()
+                    );
+                }
+                if words[0] == "timed" {
+                    let timing = system.host_timings.take().expect("host timing was enabled");
+                    if num(1) > 0 {
+                        print_host_timings(&timing, num(1), seconds);
+                    }
+                }
+                if words[0] == "profile" {
+                    for (thread, pc, hits) in system.hot_spots(30) {
+                        println!("  {pc:08X} {hits:8} {thread}");
+                    }
+                    system.profile = None;
                 }
             }
             "hold" => input.buttons = words[1..].iter().map(|name| button(name)).fold(PadState::empty(), |a, b| a | b),
@@ -160,6 +206,12 @@ fn main() {
             "code" => {
                 if !system.memory.write32_privileged(num(1), num(2)) {
                     println!("  could not write {:08X}", num(1));
+                }
+            }
+            "checkcode" => {
+                if let Some(library) = &mut system.recompiled {
+                    let stale = library.check(&mut system.memory);
+                    println!("  {stale} functions differ from the recompiled code");
                 }
             }
             "poke" => {
@@ -327,6 +379,27 @@ fn main() {
             other => eprintln!("line {}: unknown command {other}", number + 1),
         }
     }
+}
+
+fn print_host_timings(timing: &zakuro_core::HostTimings, frames: u32, seconds: f64) {
+    let ms = |span: &zakuro_core::HostSpan| span.elapsed.as_secs_f64() * 1000.0 / frames as f64;
+    let mut accounted = 0.0;
+    println!("  host timings include GPU waits within each path; instrumentation adds overhead");
+    for (name, span) in [
+        ("compiled code", &timing.compiled), ("interpreter", &timing.interpreted),
+        ("hooks", &timing.hooks), ("audio/devices", &timing.audio), ("frame boundary", &timing.frame),
+    ] {
+        accounted += ms(span);
+        println!("  host {name}: {:.3} ms/frame, {} calls", ms(span), span.calls);
+    }
+    let mut syscalls: Vec<_> = timing.syscalls.iter().collect();
+    syscalls.sort_by_key(|(_, span)| std::cmp::Reverse(span.elapsed));
+    for (number, span) in syscalls {
+        accounted += ms(span);
+        println!("  host SVC 0x{number:02X}: {:.3} ms/frame, {} calls", ms(span), span.calls);
+    }
+    println!("  host GPU command lists: {:.3} ms/frame, {} calls (nested in paths above)", ms(&timing.gpu_commands), timing.gpu_commands.calls);
+    println!("  host remaining scheduler/lookup/screen/timing overhead: {:.3} ms/frame", (seconds * 1000.0 / frames as f64 - accounted).max(0.0));
 }
 
 fn parse(word: &str) -> u32 {
@@ -676,7 +749,7 @@ fn quads_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool 
 
 fn read(system: &mut System, address: u32, len: u32) -> Vec<u8> {
     let mut out = vec![0u8; len as usize];
-    if system.memory.is_writable(address & !0xFFF, 1) {
+    if system.memory.is_readable(address & !0xFFF, 1) {
         system.memory.read_bytes(address, &mut out);
     }
     out
@@ -755,3 +828,49 @@ fn call_frame(system: &mut System, input: InputState, function: u32, args: [u32;
     *frame += 1;
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zakuro_core::memory::{MemoryRegion, MemoryState, Permission};
+
+    #[test]
+    fn host_timing_preserves_execution_and_counts_syscalls() {
+        let make = || {
+            let mut system = System::new(Config::default());
+            let block = system.memory.phys.allocate(MemoryRegion::Application, 0x1000).unwrap();
+            system.memory.map(0x0010_0000, block.addr, 0x1000, Permission::RX, MemoryState::Code);
+            // mov r0,1; add r0,r0,1; svc GetSystemTick; b back to add
+            for (i, word) in [0xE3A0_0001, 0xE280_0001, 0xEF00_0028, 0xEAFF_FFFC].into_iter().enumerate() {
+                assert!(system.memory.write32_privileged(0x0010_0000 + i as u32 * 4, word));
+            }
+            let id = system.kernel.create_thread("main", 0x0010_0000, 0x0010_0F00, 0, 0x30, 0);
+            system.map_tls_page(id);
+            system.kernel.schedule(&mut system.cpu, 0);
+            system
+        };
+        let mut control = make();
+        let mut measured = make();
+        measured.host_timings = Some(zakuro_core::HostTimings::default());
+        for _ in 0..30 {
+            assert_eq!(control.step(None), measured.step(None));
+        }
+        assert!(control.cpu.snapshot() == measured.cpu.snapshot(), "host timing changed CPU state");
+        assert_eq!(control.cpu.cycles, measured.cpu.cycles);
+        let timing = measured.host_timings.as_ref().unwrap();
+        assert_eq!(timing.interpreted.calls, 30);
+        assert_eq!(timing.syscalls[&0x28].calls, 10);
+        assert_eq!(timing.compiled.calls, 0);
+    }
+
+    #[test]
+    fn peek_reads_executable_memory() {
+        let mut system = System::new(Config::default());
+        let block = system.memory.phys.allocate(MemoryRegion::Application, 0x1000).unwrap();
+        system.memory.map(0x0010_0000, block.addr, 0x1000, Permission::RX, MemoryState::Code);
+        assert!(system.memory.write32_privileged(0x0010_0000, 0xE3A0_003C));
+        assert_eq!(read32(&mut system, 0x0010_0000), 0xE3A0_003C);
+        assert_eq!(read32(&mut system, 0x0020_0000), 0);
+    }
+}
+
