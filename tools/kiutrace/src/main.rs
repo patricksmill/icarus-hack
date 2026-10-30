@@ -37,6 +37,8 @@
 //!                                 height from the top left; the dial a size against the bar's
 //!   hover <x> <y> / unhover       move the mouse over the bottom screen's pixel, or off it, with
 //!                                 Zakuro's menu hover on: menus light what is under it, keys give them back
+//!   click                         click the mouse where it hovers: a menu outside battle outlines and uses
+//!                                 the part under it, as A would, or prints that it did not take it
 //!   shown                         print what Zakuro's hooks see shown: a battle, the pause menu, the Fiend's Cauldron
 //!   wide <aspect>                 widen the top screen to aspect (width / height), with Zakuro's hooks
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
@@ -47,6 +49,8 @@
 //!   entered <value> <frames>      print each function entered with value in r0, once each (run from the project, for analysis/functions.txt)
 //!   quads <frames>                print each 2D sprite batch flushed (0x0092F408): caller, and each quad's box
 //!   narr <x> <y> <frames>         run, also drawing the narration line on the top screen at x, y
+//!   call <function> <r0> <r1> [r2]  run a frame, the game calling function with r0..r2 where the menus outside
+//!                                 battle's touch has none (0x00A391E4), as the mouse's hooks call a menu's own code
 //!   mouse <dx> <dy> <frames>      run, adding a mouse movement of dx, dy reticle pixels per frame to
 //!                                 the aim delta where 0x00B12218 returns, as the override will
 use std::collections::HashMap;
@@ -232,6 +236,11 @@ fn main() {
                 aim_mouse.menu_hover = true;
                 aim_mouse.hover((words[0] == "hover").then(|| (float(1), float(2))));
             }
+            "click" => {
+                let frames = system.frames;
+                let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                println!("  click taken by the menu: {}", aim_mouse.menu_click(frames));
+            }
             "shown" => {
                 let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
                 let frames = system.frames;
@@ -308,6 +317,11 @@ fn main() {
                     if !mouse_frame(&mut system, input, float(1), float(2), &mut frame) {
                         return;
                     }
+                }
+            }
+            "call" => {
+                if !call_frame(&mut system, input, num(1), [num(2), num(3), num(4)], &mut frame) {
+                    return;
                 }
             }
             other => eprintln!("line {}: unknown command {other}", number + 1),
@@ -697,4 +711,47 @@ fn write_ppm(path: &Path, width: u32, height: u32, rgba: &[u8]) {
     write!(file, "P6\n{width} {height}\n255\n").unwrap();
     let rgb: Vec<u8> = rgba.chunks(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
     file.write_all(&rgb).unwrap();
+}
+
+/// runs a frame, and where the menus outside battle's touch listener has
+/// no touch (0x00A391E4), first has the game call function with args, as
+/// if called from there, then puts the CPU back.
+fn call_frame(system: &mut System, input: InputState, function: u32, args: [u32; 3], frame: &mut u64) -> bool {
+    const NO_TOUCH: u32 = 0x00A391E4;
+    system.set_input(input);
+    zakuro_core::services::hid::update(system, input);
+    let deadline = system.cpu.cycles + zakuro_core::CYCLES_PER_FRAME;
+    let mut saved = None;
+    let mut called = false;
+    while system.cpu.cycles < deadline {
+        if system.cpu.regs[15] == NO_TOUCH {
+            if let Some((regs, cpsr, vfp)) = saved.take() {
+                println!("  [{frame}] called {function:08X}: r0 {:08X}", system.cpu.regs[0]);
+                system.cpu.regs = regs;
+                system.cpu.cpsr = cpsr;
+                system.cpu.vfp.regs = vfp;
+            } else if !called {
+                called = true;
+                let cpu = &mut system.cpu;
+                saved = Some((cpu.regs, cpu.cpsr, cpu.vfp.regs));
+                cpu.regs[..3].copy_from_slice(&args);
+                cpu.regs[13] = (cpu.regs[13] - 0x40) & !7;
+                cpu.regs[14] = NO_TOUCH;
+                cpu.regs[15] = function;
+                cpu.cpsr.thumb = false;
+            }
+        }
+        match system.step(Some(deadline)) {
+            StepOutcome::Ran => {}
+            other => {
+                println!("stopped: {other:?}");
+                return false;
+            }
+        }
+    }
+    if saved.is_some() {
+        println!("  the call did not come back in the frame");
+    }
+    *frame += 1;
+    true
 }

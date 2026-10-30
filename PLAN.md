@@ -272,12 +272,43 @@ no mouse used, the pause object after 150 frames and the screens 300 frames
 after Resume are the same as with no hooks.
 
 Next, the menus outside battle (file select, chapter select, the hub's).
-They are not the battle UI: on file select (`trace/s1.state`) the cursor's
-sound (0x11) is a command of a script, run through 0x0048CB3C's vtable calls
-into 0x00AB9810 and 0x00BB9C34, not 0x0075D420. Each needs its input and
-cursor found first. Save states in each, please: chapter select, the Fiend's
-Cauldron, Arsenal, and any other menu you use. The dialogs (0x007226C4)
-may already work there.
+They are not the battle UI (FINDINGS, "Menus outside battle"). Recommended,
+as on a PC: the mouse moves the outline the way the d-pad does, by the
+screen's own function, and a click does what A does. Not a press: a
+press on what is already outlined uses it, and some screens act on taps.
+
+- Shared, once: the part under the mouse, from the touch class's hit test
+  (0x00A38324, the touch object recorded where its no-touch slot,
+  0x00A391E4, runs) to the part's hash and name (its descriptor's +0x18).
+- Each screen, a small entry: its class (vtable), where its outline's
+  hash is, its function to move the outline (given the descriptor's
+  +0x18, or for a list an index), and A's. A hover onto another part
+  calls the move; a click calls the move, then A. A part the screen has
+  no entry for is clicked as a touch, as now.
+
+Status: file select and chapter select built (`MENU_SCREENS`, `outline_menu`
+in the fork), headless, interpreter and recompiled, `trace/menufile.txt`
+and `trace/menuchapter.txt`. The menu's update (its task's thunk) is where
+the calls are made: the hit test, the part's lookup, then the menu's own
+calls, each coming back there. Checked:
+
+- File select: the books, Back and How to Play outlined under the mouse
+  (the book turns, its panel and the cursor's sound as for the keys),
+  nothing over ?HOME or the background; a click opens the book (also while
+  it turns, from what was found), goes back to the title, or shows the
+  guide. After a hover, RIGHT goes on from the mouse's book.
+- Chapter select: a chapter outlined and the list scrolled to it, with its
+  sound 7; Back outlined, and the list again from it; a click goes to the
+  Fiend's Cauldron. UP and RIGHT go on from the mouse's outline.
+- A menu opens with its own outline until the mouse moves. A part no entry
+  outlines (the chapter slider) is touched, as before. A look that finds
+  nothing (a book turning) is tried again for a second.
+
+Next: Arsenal and the hub's menus, each by the same recipe: the outline's
+hash written when a direction moves it (`watch` and `trace`), the function
+that writes it, the update's A, then `call` to try them. Save states in
+each, please, and in any other menu you use. The dialogs (0x007226C4) may
+already work there.
 
 ## Phase 4d: the Fiend's Cauldron in one window
 

@@ -14,7 +14,9 @@ a PC with a mouse and keyboard, on one screen of any shape:
   aim that is correct across the whole width. The window can be any size.
 - **The mouse in menus as on a PC**: the option under the pointer lights,
   a click uses it, and over nothing, nothing is lit. Keys and gamepads get
-  the game's own cursor back.
+  the game's own cursor back. Outside battle (file select, chapter select)
+  the pointer moves the menu's own outline, by the menu's own code as its
+  keys do, and a click does what A does.
 - **60 FPS**, plus a smaller HUD and reticle, and a CPU overclock for heavy
   scenes.
 

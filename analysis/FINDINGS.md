@@ -262,10 +262,97 @@ File select (`trace/s1.state`, the three books): RIGHT moves to the next
 book and plays sound 0x11 through 0x0036C438, from 0x00BB9C34 (a UI
 element's sound) via 0x00AB9810, called through a vtable from 0x0048CB3C,
 which runs a list of commands (vtable +0x20, +0x24). So these menus are
-scripted, not the battle UI's code, and 0x0075D420 is not used. Their
-input and cursor are still to find.
+scripted, not the battle UI's code, and 0x0075D420 is not used.
 
-## The Fiend's Cauldron (started)
+Their touch input is one class, vtable 0x00CFC340, on file select (object
+0x1403A380 in s1), chapter select and the Fiend's Cauldron (0x14012690 in
+s11 and s12). Found by the functions that run only with a touch held, from
+`ran` with and without one: 22 in all three states.
+
+- Its touch listener (secondary vtable, slots from 0x00CFC348): press
+  0x00A390EC, release 0x00A38D84, held 0x00A38858. Each turns the touch
+  into an event and sends it to the object's vtable +0x24: 1 press
+  (0x00A38728), 0x40 held (0x00A38650, every frame), 0x10 drag with its
+  movement (0x00A38510), 2 release or flick with its speed (0x00A388F8).
+  0x00A38858 also draws the blue ring at the touch (0x002FB790).
+- Hit test 0x00A38324(out, object, &xy): walks the layers (+0x1EC the
+  first, +0x28 child, +0x2C next), each an array of elements (+0x40, 0x110
+  bytes each, +0x20 how many), skips those with +0xC0 & 6 or in another
+  group (+0xC8, the object's +0x644), tests the point against the
+  element's triangles (0x0025F278, +0x9C) and keeps the frontmost (+0x80).
+  Out: layer, index (-1 none), the element in r3 on return. On s1: book I
+  0x1406D150, II 0x1406D9D0, III 0x1406E2D8, Back 0x1406E938, How to Play
+  0x1406EE00, nothing at 300,20 or on ?HOME.
+- The screens act on the press only. With press and release returned at
+  once (`code 0xa390ec 0xE12FFF1E`, the same at 0xa38d84), a held touch
+  on book II, Chapter 2 or Back does nothing. A press on a book or chapter
+  lights it (the second press opens it); a press on Back uses it. So a
+  held touch cannot light anything here, unlike the pause screen.
+- 0x0071C420 reads the touch each frame (the input singleton, +0x2C..)
+  and calls the listener: +0xC press, +0x18 held still, +0x10 moved, +0x14
+  release (a tap if under 40 px), +0x1C no touch (0x00A391E4 here, empty).
+- A press needs no touch: 0x00A38728(object, &xy) called where 0x00A391E4
+  runs lights book II, and a second opens it, with no ring; on chapter
+  select it lights Chapter 2 without the list scrolling (a real tap
+  scrolls it, on its release). A press on what is already lit uses it:
+  one on book I, lit as file select opens, opens the file.
+- The event's vtable +0x24 is empty (0x00B6F668); 0x0036C198 posts it as
+  a message (0x002F3464's queue), and each screen's own class handles it.
+  File select's (0x003025B8, run only on file select) compares the
+  element's id with its parts (+0x9C, +0xC8, +0xF4 of its table the
+  books) and the picked one, +0x34: the same opens it (0x003374D0),
+  another is picked and its book turns (RotObj0000). The lit book's index
+  is at 0x1404E9EC in s1 (0, 1, 2). Chapter select's (0x0031164C) only
+  stores the flags and position (+0x5B8.., file select's at +0x508) for
+  its update and 0x00344400. What a press does, and what is lit, is each
+  screen's.
+- The element's +0 points at its part's first name (Book01, ML_B0002,
+  BL_B0000 for Back, Move Out, the pot and the bar alike) and +4 is 2 or 3
+  on chapters: neither tells a picking part from a button.
+- Parts are named and known by a hash of the name. The hit test's layer
+  +0x38 is the part's object; 0x00326D74(it, &0x00275C18()) +0x1C is its
+  descriptor (vtable 0x00CFEB2C): +0x18 the hash, +0x1C the name (a
+  string object). Book II's layer leads to 0xA70D5C64 "book_02".
+- File select (object 0x1404E918 in s1, vtable 0x00CEC3F4): the part with
+  the outline at +0x34 (hash) and +0x38 (name), the book at +0xD4. Its
+  update (0x002BBDE8) finds the part's entry in its navigation table
+  (0x003023F0: +0xC the part, +0x38 right, +0x64 left, +0x90/+0xBC
+  return, +0x140 guide, each a hash and a name; book_01, book_02,
+  book_03, return, guide) and moves the outline with 0x00302488(screen,
+  &{hash, name}), or LEFT/RIGHT through 0x003381AC(screen, -1/1); A is
+  0x003374D0(screen). Called where 0x00A391E4 runs (the harness copy's
+  `callf`), 0x00302488 with book_02 outlines book II, the panel follows
+  and sound 0x11 plays (0x00BB9C34, 0x0036C438) as for RIGHT, and nothing
+  opens; 0x003374D0 then opens it. A descriptor's +0x18 is the {hash,
+  name} 0x00302488 takes.
+- Chapter select (object 0x1403E7A0 in s11, vtable 0x00CF243C): the part
+  with the outline at +0x6C/+0x70 (BtThumbnail on the chapters; DOWN
+  moves it to Return through 0x003668E8, which posts it). The chapter is
+  +0x12C (and +0x130), the last one open +0x128. 0x00343FF8(screen,
+  chapter, 1) picks one as LEFT/RIGHT do (0x003441F8): called with 1 it
+  outlines Chapter 2 and scrolls the list, but without RIGHT's sound 7,
+  which comes another way.
+- So the outline is each screen's own: a hash and name at its own offset,
+  and its own function to move it and to use what has it. The part under
+  the mouse is the same for all of them.
+- The hit test's out: +0 the layer, +4 the element's index (-1 none), +0xC
+  the element. The task loop runs a menu's update through a thunk, the
+  object in r0: file select's 0x002A3EC4 (to 0x002BBDE8), chapter
+  select's 0x002A3FCC (to 0x002D7404, then 0x00310880 for its keys).
+- Chapter select's list is one layer (0x140511D8 in s11) of 33 elements:
+  MenStageselectBt, ML_B0000, ML_B0001 to ML_B0026 (each chapter, named
+  by its number; ML_B0009 and ML_B0023 also _0 and _1), NN_B0000. The
+  chapters not open have +0xC0 0x2002 and are not found. The index stays
+  with the chapter as the list scrolls (Chapter 1 is 2, Chapter 2 is 3).
+  The element's +0 is its name here, so the chapter is the number less 1.
+- Chapter select: 0x00367394(object) outlines the list (BtThumbnail) as
+  UP does from Back, 0x003668E8(object) Back (Return), each posting it;
+  0x00343FF8(object, chapter, 1) scrolls to the chapter and sound 7 plays
+  as for RIGHT. 0x003675C0(object) is A: on the list, the chapter's
+  Fiend's Cauldron (0x0038B214), on Back, back (0x003672BC); from s11 it
+  goes on to the cauldron the same frames as A.
+
+## The Fiend's Cauldron
 
 States: `trace/s10.state` (your 9.state of 29 Oct, the bar), `s11` chapter
 select just before it, `s12` the bar, `s13` just after Move Out (your 1-3
