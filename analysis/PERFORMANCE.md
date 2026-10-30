@@ -394,3 +394,13 @@ the same machine in the same session. The machine was slower than in the
 earlier comparison, so compare ratios, not absolute times. This is emulation
 throughput at the console's game rate, not 100+ distinct game frames per
 second; that still needs the timing work in section 5.
+
+### Correction: alias copies at scale, 17:20 EDT
+
+The alias copies went through the console-resolution images. Once the glow's
+240-wide surface owned the frame and the frame copied it back, land battles
+dropped to 1× (`37f4ea6` fixes it). Tiles move whole, so the scaled images now
+copy directly, each tile scale× larger. State 1 is now pixel-identical to
+`3f0f7fc`, so the glow difference noted above is gone; 8.3–8.8 ms/refresh.
+Screenshots taken with `KIUTRACE_DIRECT` read the picture back through guest
+memory and show 1× in every build; check sharpness without it.
