@@ -185,7 +185,10 @@ The pickup popup ("You got treasure!", 0x009EA06C at 0x00A18368) is
 mirrored the same way, at the top screen's middle under the HUD's top
 row, shown and gone with the bottom one's. Checked on state 8 (the
 Sagittarius Bow) at 5:3 and 16:9: the 3D scene after 360 frames is the
-same with it.
+same with it. The item held (used with L) is drawn by the same call, in
+the bottom right corner on a tab (0x009EAC80), its icon the call's last
+flush; on top it goes by itself, bigger, under the power icon. Checked on
+state 9 (your 8.state): shown while held, gone once used.
 Checked over 10 s of play: same score, position and pose as without it.
 
 Side finding: the reticle hook now shrinks only the size handed to its

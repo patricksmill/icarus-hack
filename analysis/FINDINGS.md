@@ -172,6 +172,10 @@ draw). The background drawing 0x00A17F70 calls it at 0x00A18368 in a
 normal battle frame, after the portraits, once 0x00B524D8() says so; two
 other paths (0x00A18094, and a tail call at 0x00A18030) are for the
 bottom UI's other states (+0 bits 0x1000, 0x100000), not seen yet.
+The same call draws the item held (used with L, the reticle yellow while
+one is): a tab at 286..320 x 206..240 (flush 0x009EAC80), then the icon,
+289..321 x 209..241, flushed by a tail call, so the flush returns where
+0x009EA06C's call does (0x00A1836C, or the top pass when replayed).
 
 ## Powers (miracles, `MRCL` in the game's names)
 
