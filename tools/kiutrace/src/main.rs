@@ -27,12 +27,21 @@
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   pausetop                      draw the pause menu on the top screen too, with Zakuro's hook
+//!   cauldron                      draw the Fiend's Cauldron's two screens on the top screen, laid out to fit it
+//!   ctouch <x> <y>                touch the Fiend's Cauldron drawn on the top screen at its pixel, x of its 400
+//!   cdrag <x0> <y0> <x1> <y1> <frames>  and drag across it
+//!   chover <x> <y>                move the mouse over it there, without touching
+//!   cauldrontop <top> <panel> <bar> <dial> <back> <move out> <rest>  the same in a layout of its own: the top's
+//!                                 picture, its panel, the bottom's bar, Back, Move Out and the rest each as 8 numbers,
+//!                                 the box it goes in on the top screen then the part of its screen shown, x y width
+//!                                 height from the top left; the dial a size against the bar's
 //!   hover <x> <y> / unhover       move the mouse over the bottom screen's pixel, or off it, with
 //!                                 Zakuro's menu hover on: menus light what is under it, keys give them back
 //!   shown                         print what Zakuro's hooks see shown: a battle, the pause menu, the Fiend's Cauldron
 //!   wide <aspect>                 widen the top screen to aspect (width / height), with Zakuro's hooks
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
-//!   calls <addr> <frames>         print r0..r3, lr, sp, s0..s3 and r0's first words each time addr runs, up to 8 a frame
+//!   calls <addr> <frames> [max]   print r0..r3, lr, sp, s0..s3 and r0's first words each time addr runs, up to max (8) a frame;
+//!                                 addr can be several, a,b,c, printed in the order they run
 //!   ran <frames> <file>           write each function that ran in every one of the frames to out/<file>, and in any
 //!                                 of them to out/<file>.any, by analysis/functions.txt
 //!   entered <value> <frames>      print each function entered with value in r0, once each (run from the project, for analysis/functions.txt)
@@ -185,6 +194,39 @@ fn main() {
             "portraits" => system.aim_mouse.get_or_insert_with(Default::default).portrait_scale = float(1),
             "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
             "pausetop" => system.aim_mouse.get_or_insert_with(Default::default).pause_on_top = true,
+            "cauldron" => system.aim_mouse.get_or_insert_with(Default::default).cauldron_on_top = true,
+            "ctouch" | "cdrag" | "chover" => {
+                // the top screen's pixel, x of its 400, as the frontend gives it
+                let mut path = vec![(float(1), float(2))];
+                if words[0] == "cdrag" {
+                    let steps = num(5).max(1);
+                    path = (0..=steps).map(|i| (float(1) + (float(3) - float(1)) * i as f32 / steps as f32, float(2) + (float(4) - float(2)) * i as f32 / steps as f32)).collect();
+                }
+                for (x, y) in path {
+                    let frames = system.frames;
+                    let at = system.aim_mouse.as_mut().and_then(|aim_mouse| aim_mouse.cauldron_touch(frames, x, y, words[0] != "chover"));
+                    println!("  top {x} {y} -> bottom {at:?}");
+                    input.touch = at.filter(|_| words[0] != "chover").map(|(x, y)| (x as u16, y as u16));
+                    for _ in 0..if words[0] == "cdrag" { 1 } else { 6 } {
+                        if !run_frame(&mut system, input, &mut frame) {
+                            return;
+                        }
+                    }
+                }
+                input.touch = None;
+                let frames = system.frames;
+                if let Some(aim_mouse) = system.aim_mouse.as_mut() {
+                    aim_mouse.cauldron_touch(frames, 0.0, 0.0, false);
+                }
+            }
+            "cauldrontop" => {
+                use zakuro_core::aim_mouse::{CauldronLayout, CauldronPlace};
+                let place = |i: usize| CauldronPlace { to: [float(i), float(i + 1), float(i + 2), float(i + 3)], from: [float(i + 4), float(i + 5), float(i + 6), float(i + 7)] };
+                let layout = CauldronLayout { top: place(1), panel: place(9), bar: place(17), dial: float(25), back: place(26), move_out: place(34), rest: place(42) };
+                let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                aim_mouse.cauldron_on_top = true;
+                aim_mouse.cauldron_layout = Some(layout);
+            }
             "hover" | "unhover" => {
                 let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
                 aim_mouse.menu_hover = true;
@@ -199,7 +241,9 @@ fn main() {
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
             "calls" => {
                 for _ in 0..num(2) {
-                    if !calls_frame(&mut system, input, num(1), &mut frame) {
+                    let max = if words.len() > 3 { num(3) } else { 8 };
+                    let addresses: Vec<u32> = words[1].split(',').map(parse).collect();
+                    if !calls_frame(&mut system, input, &addresses, max, &mut frame) {
                         return;
                     }
                 }
@@ -310,14 +354,15 @@ fn run_frame(system: &mut System, input: InputState, frame: &mut u64) -> bool {
 }
 
 /// runs a frame one instruction at a time, printing the registers each
-/// time address is about to run.
-fn calls_frame(system: &mut System, input: InputState, address: u32, frame: &mut u64) -> bool {
+/// time address is about to run, up to max times.
+fn calls_frame(system: &mut System, input: InputState, addresses: &[u32], max: u32, frame: &mut u64) -> bool {
     system.set_input(input);
     zakuro_core::services::hid::update(system, input);
     let deadline = system.cpu.cycles + zakuro_core::CYCLES_PER_FRAME;
     let mut count = 0;
     while system.cpu.cycles < deadline {
-        if system.cpu.regs[15] == address && count < 8 {
+        let address = system.cpu.regs[15];
+        if addresses.contains(&address) && count < max {
             count += 1;
             let r = system.cpu.regs;
             let s: Vec<String> = (0..4).map(|i| format!("{}", f32::from_bits(system.cpu.vfp.regs[i]))).collect();

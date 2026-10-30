@@ -279,26 +279,28 @@ cursor found first. Save states in each, please: chapter select, the Fiend's
 Cauldron, Arsenal, and any other menu you use. The dialogs (0x007226C4)
 may already work there.
 
-## Phase 4d: the Fiend's Cauldron in one window (paused)
+## Phase 4d: the Fiend's Cauldron in one window
 
-Goal: the cauldron on one screen, drawn by the game, no crops. Recommended:
-the bottom screen as the picture, widened to the window's shape like the
-top screen in battle, with the top screen's hint, hearts and intensity
-marker drawn into it at its sides. The bottom screen has everything you
-touch and the 3D; the top has information. Moving the 3D to the top
-instead is the same research and more remapping.
+Status: built, working headless, interpreter and recompiled. The fork
+draws both screens on the top screen through the game's own renderer
+(FINDINGS "The Fiend's Cauldron"): the board picture without its
+background, the intensity panel over the bar sliding with the dial, the
+bar with a smaller dial, Back, the pot and pan, and Move Out, each a part of its screen cropped by its camera's projection
+into a box (`CauldronLayout::fitting`, made for 16:9, smaller on a
+narrower window). The hint stays across the top. Clicks map back to the
+bottom screen, a press of the dial drags along the bar, and the mouse over
+the dial, Move Out or Back lights it as the arrow keys do. The mouse is
+let go while it shows. `ZAKURO_CAULDRON_TOP=0` turns it off. Harness:
+`cauldron`, `ctouch`, `cdrag`, `chover`, `cauldrontop`.
 
-Done: telling the screen is shown, and whether it pours
-(`AimMouse::cauldron_shown`, `cauldron_pouring`, FINDINGS "The Fiend's
-Cauldron"). Harness commands for finding a screen's code: `ran`,
-`entered`, `shown`.
+Checked: dial drag 4 → 7.4, Move Out starts the pour, hover over each
+button, the pour, a battle's 300 frames the same with it on.
 
-Next, research: how the cauldron's pictures, bar, buttons and pot are
-drawn (not the battle UI's sprite batch, not the text layer loop), each
-screen's camera for them, and whether the top's elements can be drawn one
-by one into the bottom pass. Then: widen the bottom screen's view while
-the cauldron shows, draw the top's elements into it, and show the bottom
-screen alone.
+Left: your test; the bottom's ring background around the pot, asked for
+back (`Bt0010`, left off in `CAULDRON_LEFT_OFF`), to draw in its own part
+behind the pot without covering the board; the board's hearts box lost its
+dark frame with the background (same mesh node); the real bottom screen is drawn widened at
+16:9 (the widening reaches its camera too).
 
 ## Phase 5: playing without the bottom screen
 

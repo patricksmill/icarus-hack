@@ -308,8 +308,62 @@ of 29 Oct, 19:06).
   (0x00F2DC9C) with a projection for the top (0x00DB72D0, once for each
   eye at x +-18.3) or the bottom (0x00DB7290), draws only the text lines
   ("fnt_%02d"): with its draws (0x00909ACC at 0x00A35B00, 0x00A35BC8)
-  skipped, only the hint line is gone. The pictures, bar, buttons and the
-  3D pot are drawn some other way, still to find.
+  skipped, only the hint line is gone. Everything else is models in the
+  scene, below.
 - Tried and dropped: composing the window from crops of the two screens'
   pictures in the presenter. It works but looks pasted together (cut
   edges, boxes of the bottom screen's background).
+
+How the screens are drawn (all from `trace/s12.state`):
+
+- A frame renders render passes (vtable 0x00D16058, run by 0x00BA9E14):
+  "PreRenderPass", "TopRenderPass", "BottomRenderPass", each a list of
+  drawings at +0x40, +0x50 how many, the screen at +0x58 (-1, 0 top, 1
+  bottom), started by 0x009167C0 (0x00916588 picks the buffer: 0 the left
+  eye, 1 the bottom, 2 the right eye). Top and bottom draw the same scene
+  (0x149A6378) with different cameras.
+- The scene: cameras by screen from +0xC8 (0x00E14BEC top, 0x00E14DCC
+  bottom, both perspective lenses), layers 0x28 bytes each from +0xEC,
+  each with a list (+4) of models at +0x18..+0x1C. A model (vtable
+  0x00D14AF4) has its CGFX model (CMDL) at +8, its runtime meshes after
+  it (0x88 each), and its mesh nodes' visibility at +0x17C (8 bytes each,
+  shown at +4), in the CMDL's +0xD0 dictionary's order. 0x008F5FB4(model,
+  mesh) is the visibility test; the CMDL's own flags are not read.
+- The top's drawing (vtable 0x00CEF1A0, 0x0072A034): 0x00727804 sets the
+  viewport from +0x44 (x, y, w, h, the buffer turned: x and y count from
+  the screen's right and bottom) and the camera, then 0x00727C24 draws
+  layers 0xB..0xE, each the right eye, the left eye, then its text
+  (0x00718120 at 0x00727F10; the hint is layer 0xB's). Layer 0xB: the
+  picture, one model `MenBetheartUp0000` (nodes: polySurface45 the dark
+  frame around the board and the hearts' box, polySurface51 the shading,
+  polySurface47 the intensity panel), the hearts' number and icon.
+- The bottom's drawing (vtable 0x00CF6D6C, 0x007C8ECC): the viewport, the
+  bottom camera, layers 0xF..0x12 when +0x5D is set (loop ends at
+  0x007C91C4), then the bottom 2D. Layer 0xF: `MenBetHeartBt0003` pot,
+  `Bt0004` pan and hearts bet, `Bt0002` bar and dial, `Bt0005` "Try
+  This?", `Bt0006` crown, `Bt9999` Back, `Bt0010` the ring background,
+  `Bt0007` glow, two particle models; layer 0x12: `Bt0000` Move Out
+  (nodes `button`, `cursor`, the red outline).
+- A camera's projection is kept at +0x6C while bit 2 of +8 is set: its
+  first row gives the view up the screen, the second across it from the
+  right. Scaling and shifting them shows a part of the screen in the
+  viewport. The top's stereo camera (0x00916234) rebuilds each eye from
+  it and swaps where the shifts land (see `cropped_projection`).
+- Mirroring a model by the projection turns its triangles' winding, and
+  the materials' face culling (GPU register 0x40, `00010040` after the
+  value in the CMDL's commands) then drops them.
+- The pot task's +0x6C is the intensity (float). The dial on the bottom
+  screen is at x 33 + 28.3 per 1; the top's panel slides under the board,
+  its middle at x 64 + 30 per 1.
+- The cursor (what the arrow keys light): a task, vtable 0x00CEE170,
+  updated by 0x0027B100. It names what is lit at +0xD8 (hash, string):
+  `Level_Bar` 0x53D3F0F1, `GO` 0xCD94A288, `return` 0x928BEAA4. Up and
+  down go between the dial and Move Out, Back to the dial; left and right
+  between Move Out and Back, and move the dial when it is lit. A key
+  lights another with 0x003062F0(cursor, name), 0x00305D44(cursor, 1),
+  then +0x191 |= 0x10; done before the key handling (at the update's
+  entry) the old one stays lit, done at 0x0027BBA0 (after it) it works.
+- Move Out acts on the press, not the release, and grows when lit.
+- Your cauldron states were saved with the 16:9 widening in both lenses
+  (aspect 1.7778 and 1.4222, the game's are 1.6667 and 1.3333): harness
+  scripts write the game's back after loading.
