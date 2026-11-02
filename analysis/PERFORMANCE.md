@@ -404,3 +404,60 @@ copy directly, each tile scale× larger. State 1 is now pixel-identical to
 `3f0f7fc`, so the glow difference noted above is gone; 8.3–8.8 ms/refresh.
 Screenshots taken with `KIUTRACE_DIRECT` read the picture back through guest
 memory and show 1× in every build; check sharpness without it.
+
+## Bloom footprint and repeating-grain minification, 31 October 2026
+
+The curved screen-door pattern is introduced **before bloom**. A 36-vertex
+cube draw in the air battle samples the 128×128 ETC1 texture at `0x1F46A800`
+with texture coordinates in the thousands, using mirrored repeat and linear
+minification. The old Vulkan texture upload provided only mip 0. Both the
+software and hardware rasterizers showed the resulting moiré; framebuffer
+alias copies on/off and CPU vertex shading did not remove it. Per-draw
+software captures locate its first appearance at draw 27 in the current
+Windows slot 1. Adding a tiny tolerance to final color truncation did not
+help and was reverted.
+
+The hardware renderer now uploads decoded guest textures with the same
+alpha-weighted mip builder used for texture packs. Linear minification can
+select these levels with an unbiased LOD. Magnification and minification
+use their separate register bits; point magnification and base-level texture
+data stay intact. Texture-pack sharpening retains its existing bias.
+This fixes minified grain without a final-frame blur. Software rasterization
+still uses its existing base-level sampling.
+
+Linearly filtered framebuffer effects that resize their input, without a
+depth/stencil attachment, now average scaled source samples within each guest
+pixel before sampling the resulting native-sized copy. This restores the
+blur footprint of the small glow buffers while retaining the original taps,
+combiner constants and blending. Native and scaled copies have separate
+cache keys, including separate twin caches, and each follows the source's
+generation. Nearest-filtered scene copies keep scaled detail. Existing tile
+alias ownership and guest-memory writeback are unchanged. The existing
+transfer compute shader performs the averaging; no shader changes remain.
+
+Reproduction scripts, per-draw diagnostics, before/after captures and build/
+test logs are in `trace/glow-fix/`. The diagnostic draw dumps and tracing code
+were removed from the renderer after isolating the offending draw.
+
+Validation: the Vulkan GPU suite passed 177 tests (2 existing tests ignored).
+Final focused checks passed the grain/magnification regression, the effect
+copy regression extended to both real and twin images, and all 11 texture
+pack tests. Captures cover 1×, 3× and 6× at 5:3 and 16:9 for sky and ground,
+plus pause/dialog at 3× and alias-copy on/off comparisons. Interpolation was
+toggled successfully on the shared-device path; the saved air scene did not
+select an intermediate frame at the sampled refreshes, so the synthetic
+twin-image regression supplies the direct check of that copy path.
+
+The local Linux software-Vulkan timing comparison was too noisy for a
+performance conclusion: before 772/950 ms per refresh, after 1491/565 ms per
+refresh, during concurrent compilation. The two 60-refresh blocks execute
+identical interpreted/recompiled instruction counts before and after. These
+are llvmpipe measurements, not NVIDIA performance estimates. Native Windows
+visual/performance verification remains a manual check.
+
+Windows release cross-build completed successfully and was copied to
+`dist/zakuro-kiu-mouse.exe` (SHA-256
+`cb0acaf05f4bcc416187eff0b0eeeb245f8d58261ddebd93d4b83e33d8304187`).
+The prior executable is retained as `dist/zakuro-kiu-mouse-before-glow.exe`.
+The final native smoke capture matches the verified fixed capture byte for
+byte on both screens.
