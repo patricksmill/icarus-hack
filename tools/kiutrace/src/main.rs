@@ -16,6 +16,8 @@
 //!   drag <x0> <y0> <x1> <y1> <frames>   touch and slide across frames, then let go
 //!   shot <name>                   write both screens as out/<name>_top.ppm and _bottom.ppm
 //!   shotscaled <name>             the same at the hardware renderer's scale, KIUTRACE_SCALE=<n>
+//!                                 also writes <name>_right.ppm when the game draws in 3D
+//!   stereo <0..1>                 set the console's 3D slider (0 is off)
 //!   save <file> / load <file>     a Zakuro saved state
 //!   scan                          list objects whose first word is an aim vtable
 //!   peek <addr> <count>           print count words at addr as hex and float
@@ -27,10 +29,14 @@
 //!   trace <frames>                run instruction by instruction, printing each write to a watched range
 //!   aim <dx> <dy> <frames>        run with Zakuro's own mouse aiming captured, moving dx, dy a frame
 //!   power                         press the power key as Zakuro does: in a battle, uses the current power
-//!   mirror                        draw the bottom screen's hearts, item box, power icon and pickups on top too
+//!   mirror [0|1]                  mirror battle UI, dialogue images and boss cards on top (default on)
 //!   portraits <scale>             draw the portraits on the top screen too at scale, with Zakuro's hook
 //!   narrtop                       draw the narration on the top screen too, with Zakuro's hook
 //!   pausetop                      draw the pause menu on the top screen too, with Zakuro's hook
+//!   menutop [0|1]                 draw scripted menus on the top screen (default on)
+//!   mhover <x> <y>                hover over the top screen, in its 400 by 240 pixels
+//!   mfrom <x> <y> [button hash]   hover there using an original bottom-screen point
+//!   mdrag <x0> <y0> <x1> <y1> <frames> drag those native points through the top-screen mapping
 //!   cauldron                      draw the Fiend's Cauldron's two screens on the top screen, laid out to fit it
 //!   ctouch <x> <y>                touch the Fiend's Cauldron drawn on the top screen at its pixel, x of its 400
 //!   cdrag <x0> <y0> <x1> <y1> <frames>  and drag across it
@@ -43,7 +49,11 @@
 //!                                 Zakuro's menu hover on: menus light what is under it, keys give them back
 //!   click                         click the mouse where it hovers: a menu outside battle outlines and uses
 //!                                 the part under it, as A would, or prints that it did not take it
+//!   press <frames> / release      hold the physical mouse button, polling the frontend's click/drag routing
+//!                                 each frame, or release it (a short press clicks, a hold or move touches)
+//!   wheel <rows> [columns]        scroll the hovered menu; positive down/right (columns is Shift+wheel)
 //!   shown                         print what Zakuro's hooks see shown: a battle, the pause menu, the Fiend's Cauldron
+//!   interpolation [0|1]           inspect or toggle frame interpolation (requires KIUTRACE_DIRECT=1)
 //!   wide <aspect>                 widen the top screen to aspect (width / height), with Zakuro's hooks
 //!   hud <scale>                   draw the top screen's HUD and reticle at scale, with Zakuro's hook
 //!   calls <addr> <frames> [max]   print r0..r3, lr, sp, s0..s3 and r0's first words each time addr runs, up to max (8) a frame;
@@ -93,7 +103,8 @@ fn main() {
     // the screen handles each refresh, without a window or display wait.
     let direct = std::env::var_os("KIUTRACE_DIRECT").is_some();
     let device = direct.then(|| std::sync::Arc::new(zakuro_gpu::SharedDevice::new().expect("create the shared GPU device")));
-    let config = Config { hardware_renderer: scale > 0, resolution: scale.max(1), device, find_recompiled: false, new3ds, recompiled, ..Config::default() };
+    let data_dir = std::env::var_os("KIUTRACE_DATA_DIR").map(PathBuf::from);
+    let config = Config { hardware_renderer: scale > 0, resolution: scale.max(1), device, find_recompiled: false, new3ds, recompiled, data_dir, ..Config::default() };
     let mut system = loader::load(&args[1], config).unwrap_or_else(|error| {
         eprintln!("could not load {}: {error}", args[1]);
         std::process::exit(1);
@@ -186,7 +197,11 @@ fn main() {
                     let (image, width, height) = system.read_screen_scaled(screen);
                     write_ppm(&path, width, height, &image);
                 }
+                if let Some((image, width, height)) = system.read_right_eye_scaled() {
+                    write_ppm(&out.join(format!("{}_right.ppm", words[1])), width, height, &image);
+                }
             }
+            "stereo" => system.set_slider_3d(float(1).clamp(0.0, 1.0)),
             "save" => std::fs::write(words[1], system.save_state().expect("save the state")).expect("write the state"),
             "load" => system.load_state(&std::fs::read(words[1]).expect("read the state")).expect("load the state"),
             "scan" => scan(&mut system),
@@ -246,10 +261,70 @@ fn main() {
                 println!("  [{frame}] power key: {}", if in_battle { "uses the current power" } else { "ZL, not in a battle" });
             }
             "overclock" => system.cpu.overclock = num(1).max(1),
-            "mirror" => system.aim_mouse.get_or_insert_with(Default::default).mirror_bottom = true,
+            "mirror" => system.aim_mouse.get_or_insert_with(Default::default).mirror_bottom = words.len() == 1 || num(1) != 0,
             "portraits" => system.aim_mouse.get_or_insert_with(Default::default).portrait_scale = float(1),
             "narrtop" => system.aim_mouse.get_or_insert_with(Default::default).narration_on_top = true,
             "pausetop" => system.aim_mouse.get_or_insert_with(Default::default).pause_on_top = true,
+            "menutop" => system.aim_mouse.get_or_insert_with(Default::default).menus_on_top = words.len() == 1 || num(1) != 0,
+            "mhover" | "mfrom" => {
+                let frame = system.frames;
+                let mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                let point = if words[0] == "mfrom" { mouse.menus_top_point(frame, float(1), float(2), (words.len() > 3).then(|| num(3))) } else { Some((float(1), float(2))) };
+                let pointer = point.and_then(|(x, y)| mouse.menus_top_touch(frame, x, y, false));
+                mouse.menu_hover = true;
+                mouse.hover(pointer);
+                println!("  top {point:?} -> bottom {pointer:?}");
+            }
+            "mdragtop" => {
+                let (start, end, count) = ([float(1), float(2)], [float(3), float(4)], num(5).max(1));
+                // Drive host pixels directly, as the frontend does. Do not
+                // reverse-map a native path through changing menu parts.
+                for _ in 0..12 {
+                    let mouse = system.aim_mouse.as_mut().expect("menutop before mdragtop");
+                    let pointer = mouse.menus_top_touch(system.frames, start[0], start[1], false);
+                    mouse.menu_hover = true;
+                    mouse.hover(pointer);
+                    if !run_frame(&mut system, input, &mut frame) { return; }
+                }
+                for step in 0..=count {
+                    let mouse = system.aim_mouse.as_mut().unwrap();
+                    let t = step as f32 / count as f32;
+                    let point = [start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t];
+                    let pointer = mouse.menus_top_touch(system.frames, point[0], point[1], true);
+                    mouse.hover(pointer);
+                    input.touch = mouse.menu_touch(system.frames, true).map(|(x, y)| (x.clamp(0.0, 319.0) as u16, y.clamp(0.0, 239.0) as u16));
+                    println!("  drag top {point:?}, mapped {pointer:?}, touch {:?}", input.touch);
+                    if !run_frame(&mut system, input, &mut frame) { return; }
+                }
+                for _ in 0..30 {
+                    let mouse = system.aim_mouse.as_mut().unwrap();
+                    let pointer = mouse.menus_top_touch(system.frames, end[0], end[1], true);
+                    mouse.hover(pointer);
+                    input.touch = mouse.menu_touch(system.frames, true).map(|(x, y)| (x.clamp(0.0, 319.0) as u16, y.clamp(0.0, 239.0) as u16));
+                    if !run_frame(&mut system, input, &mut frame) { return; }
+                }
+                let mouse = system.aim_mouse.as_mut().unwrap();
+                let pointer = mouse.menus_top_touch(system.frames, end[0], end[1], false);
+                mouse.hover(pointer);
+                mouse.menu_touch(system.frames, false);
+                input.touch = None;
+            }
+            "mdrag" => {
+                let (start, end, count) = ([float(1), float(2)], [float(3), float(4)], num(5).max(1));
+                for step in 0..=count {
+                    let mouse = system.aim_mouse.as_mut().expect("menutop before mdrag");
+                    let t = step as f32 / count as f32;
+                    let (x, y) = mouse.menus_top_point(system.frames, start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t, None).expect("visible top-screen control");
+                    let pointer = mouse.menus_top_touch(system.frames, x, y, true);
+                    mouse.hover(pointer);
+                    input.touch = mouse.menu_touch(system.frames, true).map(|(x, y)| (x.clamp(0.0, 319.0) as u16, y.clamp(0.0, 239.0) as u16));
+                    if !run_frame(&mut system, input, &mut frame) { return; }
+                }
+                let mouse = system.aim_mouse.as_mut().unwrap();
+                mouse.menus_top_touch(system.frames, 0.0, 0.0, false);
+                mouse.menu_touch(system.frames, false);
+                input.touch = None;
+            }
             "cauldron" => system.aim_mouse.get_or_insert_with(Default::default).cauldron_on_top = true,
             "ctouch" | "cdrag" | "chover" => {
                 // the top screen's pixel, x of its 400, as the frontend gives it
@@ -293,10 +368,35 @@ fn main() {
                 let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
                 println!("  click taken by the menu: {}", aim_mouse.menu_click(frames));
             }
+            "press" | "release" => {
+                let pressed = words[0] == "press";
+                for _ in 0..if pressed { num(1).max(1) } else { 1 } {
+                    let mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                    mouse.menu_hover = true;
+                    input.touch = mouse.menu_touch(system.frames, pressed).map(|(x, y)| (x as u16, y as u16));
+                    if pressed && !run_frame(&mut system, input, &mut frame) {
+                        return;
+                    }
+                }
+            }
+            "wheel" => {
+                let mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                println!("  wheel taken by the menu: {}", mouse.scroll_menu(system.frames, [float(2), float(1)]));
+            }
             "shown" => {
                 let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
                 let frames = system.frames;
-                println!("battle {} pause {} cauldron {}", aim_mouse.in_battle(frames), aim_mouse.pause_menu_shown(frames), aim_mouse.cauldron_shown(frames));
+                println!("battle {} pause {} cauldron {} menus {} part {:08X?}", aim_mouse.in_battle(frames), aim_mouse.pause_menu_shown(frames), aim_mouse.cauldron_shown(frames), aim_mouse.menus_on_top_shown(frames), aim_mouse.hovered_menu_part());
+            }
+            "expectmenu" => {
+                let expected = (words[1] != "none").then(|| num(1));
+                assert_eq!(system.aim_mouse.as_ref().and_then(|mouse| mouse.hovered_menu_part()), expected, "hovered menu part");
+            }
+            "interpolation" => {
+                if words.len() > 1 {
+                    println!("  enabled: {}", system.set_interpolation(num(1) != 0));
+                }
+                println!("  between: {}, matches: {:?}", system.shows_between(), system.interpolation_matches());
             }
             "wide" => system.aim_mouse.get_or_insert_with(Default::default).widen = float(1) / (5.0 / 3.0),
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),

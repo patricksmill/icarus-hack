@@ -117,6 +117,78 @@ local player. Game camera (`aim+0x8C → +0x2C`): fovy at +0x2B8, aspect at +0x2
   needed); strafing and firing for 1.5 s matches the unpatched game frame
   for frame.
 
+## Training HUD
+
+Air and land Practice Range both flush the defeat and distance counters at
+`0x0060D66C`: one batch of 11 quads spanning both bottom corners. It is
+separate from the normal battle HUD callers. The generic widescreen fallback
+shrunk each background slice around its own centre, opening gaps, and did
+not apply the HUD scale. `place_training_hud` now scales every slice and
+digit around its panel's bottom corner (0,240 or 400,240), with widescreen
+correction on x. Headless screenshots checked in both modes at 16:9 and
+21:9 with HUD scale 0.7; a unit test checks shared slice edges stay joined.
+
+## Dialogue illustrations and boss panels (October 31)
+
+The current desktop slot 1 is the Chapter 3 air scene from the Hewdraw
+screenshot. Run 60 refreshes from it to reach "Like, this guy?" and the blue
+sprite. The saved fixture is `trace/ui-probe/hewdraw-blue.state`.
+
+- `0x00A17F70` draws the battle's bottom UI. The illustration branch calls
+  `0x00A0F734` at `0x00A18244`, handing it the bottom UI, 2D context, pass
+  number and fade. It draws a black center band (`0x00A0F814`), zero to four
+  illustration sprites (`0x00A0F9E8`), then black bands/borders (return to
+  `0x00A18248`). Only the illustration flush is mirrored.
+- The bottom UI's `+0x200` is the image-slot mask. Four `0x24`-byte slots
+  start at `+0x204`: image id/flags, x/y at +4/+8, UV offsets at +0xC/+0x10,
+  width/height at +0x14/+0x18, scale at +0x1C, alpha at +0x20. Hewdraw's slot
+  is x 112, y 60, width 24, height 31, scale 4: its quad is 96 x 124, not
+  the entire 320 x 130 band. Fit the union of active image rectangles to
+  retain multi-sprite arrangements and the original aspect ratio.
+- Hearts occupy y `(40..90) * hud_scale` on top. Images start at
+  `98 * hud_scale`, end eight HUD pixels above the visible portrait artwork,
+  and sit eight HUD pixels from the right edge. Pit's visible head starts
+  about 64 pixels into the portrait's 256-pixel tile. Transparent tile
+  padding is excluded from the reserved portrait height.
+- `0x00A18204` calls `0x00A0E744`, drawing the boss artwork and baked-in
+  title in two tiles, x 0..256 and 256..320, y 0..240. Reveal placement is
+  128 x 96 HUD pixels, centered at y 40. Player-health visibility
+  (`context+0x31BC & 1`) selects the combat layout: clip both tiles and UVs
+  to y 0..64, then place the title at y 8, 160 x 32 HUD pixels. Preserve
+  their common x transform so the texture seam stays joined.
+- `0x00A18224` calls the boss overlay/effect drawing `0x00A14320`.
+  `0x00A18130` calls the alternate text drawing `0x00A15C90`; its first
+  full-screen black flush (`0x00A15D3C`) is omitted on top. Those paths use
+  the boss region. No separate boss-health draw appeared in the inspected
+  Twinbellows introduction/combat fixtures. Other bosses and natural defeat
+  still need coverage.
+- Extras now replay at `0x0060D66C`, after all top battle-HUD branches.
+  `0x0060D60C` can be skipped during a reveal. The pass keeps its current
+  context in r4; capture that rather than relying on a previously drawn
+  score, especially across state loads. Bottom passes clear missing calls;
+  recordings are valid for the next top UI pass, independently of the number
+  of intervening vblanks. Retain calls for both eyes: the game submits the
+  shared UI list to each. Allow twelve refreshes after loading a fixture so
+  captures include a completed replay, not only the initial cold frame.
+- `0x0060D66C` is also the native training-HUD flush return. Restrict its
+  corner placement to native draws; otherwise a replayed narration line
+  takes that branch and shifts right. A regression test exercises the real
+  sprite hook with narration at this address across HUD scales/aspect ratios.
+- Restore the recorded native material selectors around each replay and
+  mark their bindings dirty. Suppress decorative bands by discarding their
+  pending sprite batch, leaving dirty material state for the next visible
+  draw, rather than submitting off-screen degenerate quads.
+
+Validation artifacts are under `trace/ui-probe`: twenty-four software layouts
+(four scenes, three aspect ratios, two HUD scales), 2x hardware captures,
+both stereo eyes, and isolated image/boss removal fixtures. All 23
+`aim_mouse::tests` pass. After 180 identical firing refreshes per variant in
+Hewdraw and Twinbellows combat, the player-health and score objects match
+byte-for-byte; all top pixels outside the mirrored UI match. The bottom
+screen's decorative background animation can drift, as with earlier replay
+hooks. `kiutrace` supports `mirror 0/1`, `stereo 0..1`, and right-eye output
+from `shotscaled` for these checks.
+
 ## Bottom-screen UI inventory (from your save states, PLAN phase 1)
 
 Sprite flush callers (return addresses into 0x0092F408), by element:
@@ -133,7 +205,9 @@ Sprite flush callers (return addresses into 0x0092F408), by element:
 | 0x009EA550, 0x009EA800, 0x009EAB24 | "You got treasure!" popup: 9-slice box, the item's icon, the two text lines | bottom | 23..301 x 118..191, slides in from the left, about 200 frames, fades out |
 | 0x00A17E70-0x00A181C0, 0x00A0F3xx-0x00A0F6xx | background, frame | bottom | |
 | 0x0060D68C, 0x00A0D22C-0x00A0E338, 0x00A04710-0x00A04F00, 0x00A01A4C | pause screen | top label, bottom menu | |
-| 0x00A0E9D8, 0x00A0EA60, 0x00A182C4 | boss intro bottom screen | bottom | |
+| 0x00A0F9E8 | dialogue illustration sprites | bottom | 0x00A0F734, called at 0x00A18244; omit its black bands/borders on top |
+| 0x00A0E9D8, 0x00A0EA60 | boss artwork and baked-in title | bottom | two texture tiles, 0..256 and 256..320, both 0..240 vertically; draw call at 0x00A18204 |
+| 0x00A182E4 | speakers during boss/background drawing | bottom | call to the normal portrait renderer, not boss artwork |
 
 Pause screen, from state 5: the bottom battle pass 0x0060D93C calls
 0x00A01A1C(ctx+0x243C, ctx, shown) at 0x0060DBB4 when 0x00B52774() says
@@ -352,6 +426,197 @@ s11 and s12). Found by the functions that run only with a touch held, from
   Fiend's Cauldron (0x0038B214), on Back, back (0x003672BC); from s11 it
   goes on to the cauldron the same frames as A.
 
+- Main menu (`trace/s14.state`, your 1.state of 30 Oct): object
+  0x1403D640, vtable 0x00CFBD9C, updated through 0x002A3F9C (to
+  0x002EBA60, which redraws the outline when +0x9C is set, then
+  0x0034E28C). Its keys, 0x003201D8(object, input): directions step a
+  table by 0x0034E1B8(object, direction; 5 RIGHT), which writes the
+  outlined part's hash at +0x44 and its name (a string) at +0x48, copies
+  them to +0x70/+0x74, calls 0x0036FB58(object, 0) (reads only +0x44 and
+  +0x48, sets +0x9C) and plays the cursor's sound, 0x002B435C(+0x30, 7).
+  A (input 0xF500) is 0x0036F59C(object); B 0x200 goes back. The hit
+  test's parts carry the same hashes: Solo 2E49363F, StreetPass 5407F273
+  ("Present"), Vault E250C577, Together E2DCC735, Options D929D345, Back
+  9A07E025, AR 4A7AE3E3, guide FD90A21D. Functions of the 0x0034E/0x0036F
+  family may be shared by the hub's other button menus.
+
+- Solo hub (`trace/solo.state`, from s14's Solo): object 0x1403A5E0,
+  vtable 0x00CFC3D0. Its live update is 0x002ECCF4 (called directly by
+  the task dispatcher, rather than through thunk 0x002A3EF8). The current
+  hash/name is +0x5C/+0x60, pending +0xFC/+0x100. Directions in
+  0x00320E7C call 0x002BFE50(object+0x4C, part), queue the pending name,
+  and set +0x150 bit 0. The update posts its notification, copies pending
+  to current, and moves the camera by 0x00321D28. A is 0x00370300(object),
+  also used by the touch handler 0x0034E944. +0x144 == 1 is the opening
+  guide, which owns input. Hit-test hashes: Move Out 79BCE02D, Arms Altar
+  38C8C232, Practice Range 94CE5E14, Idol Toss 4F73A4C0, Gear 71966FCC,
+  Treasure Hunt ED263933, Back 9A07E025.
+  A click that needs to change the outline must let the update consume
+  its queue before calling A: otherwise clicking Arms Altar after DOWN
+  moved to Gear opens Gear. Shared menu call handling now waits for the
+  next update after its final outlining call before using the choice.
+
+- Arms Altar's button menu (`trace/altar.state`, from Solo's Arms Altar):
+  object 0x1403E7C8, vtable 0x00CFCA28, input 0x002A1FD8 (called by
+  active update 0x0025F940 and transition update 0x0025FAEC). Current
+  hash/name +0x44/+0x48. Directions go through 0x002EF084 and touches
+  through 0x002EF154; both call 0x00322DB0(object, &name, repeat), which
+  moves the outline, posts its notifications, updates the animations and
+  plays the cursor sound. A is 0x00322C34, Back 0x0032287C. Hit-test
+  hashes: Redeem Hearts 1B80430F, Fuse Weapons C59BD435, Convert to Hearts
+  E43D88E9, Gear 71966FCC, Back 9A07E025. The mouse calls 0x00322DB0 with
+  repeat 0, then A after a click. RIGHT from Redeem Hearts selects Fuse
+  Weapons; clicking with the pointer still over Redeem Hearts correctly
+  returns there and opens the shop. Harness: `trace/menualtar.txt` and
+  `trace/menualtar-{fuse,convert,gear,back}.txt`.
+
+- Mouse gestures: the frontend no longer consumes a mapped menu button
+  on mouse-down. `AimMouse::menu_touch` waits for release to call A, or
+  passes a held native touch after 12 emulated frames or four pixels of
+  movement. It begins at the original point for three frames, then
+  follows the pointer, so fast movements still grab the original item
+  through a 30 FPS input poll. Unmapped controls pass native touch
+  immediately. `outline_menu` leaves native touch and its release alone;
+  losing focus cancels the pending click. The frontend polls held input
+  even without cursor events. Harness `press <frames>` / `release` uses
+  the same routing; power-board pickup, drag and release match native
+  touch on both screens (`trace/powerdrag-{mouse,native}.txt`).
+
+Armory mouse support uses seven native input updates: Gear 0x002B6DB8,
+Redeem 0x00238CBC, Convert 0x001C9734, Fuse 0x00230B5C, Powers
+0x002BB14C, weapon list 0x0019CDC8, categories 0x0019BDC4. Their A/B
+event records preserve native validation and confirmations. Generic lists
+keep absolute selection at +0xE4, first visible row at +0xEC, row height
+at +0xFC and animated offset at +0x11C; 0x0031AA88 scrolls their viewport
+and 0x0031AED8 refreshes the cursor. Fusion uses independent horizontal
+and vertical offsets +0x2B28/+0x2B30, bounded by count +0x2B40 minus
+seven visible items. Category navigation uses native direction tables and
+skips unavailable categories. Part-component tree lookup terminates at
+its head sentinel; +0x10 is node color, not a leaf marker.
+
+- Options and its submenus (states s15 Options, s16 Other, s17
+  Controls, s18 Volume, s19 Profile, s20 Subtitles, s21 Reticle/Camera,
+  s22 Control Configuration, s23 More Controls, s24 Music Gallery, s25
+  Profile's Yes/No, s26 Air Battle's settings, s27 SpotPass's No/Yes; all
+  made headless from s14). Each is its own class, most a copy of one
+  pattern: the outlined part at +0x44 (hash) and +0x48 (name string); a
+  key queues the next one and an early step of the update (a copy of
+  0x002B4428) outlines it, posts it to the buttons' animations and plays
+  the sound from a scripted element (0x00BB9C34). Per screen (vtable,
+  update thunk, how a key queues, A):
+  - Options 0x00CEAE98, 0x00224BA0: 0x002BFE50(+0x34, part), then
+    0x002EA7A0(+0x9C, part), +0xD4 |= 1 (bit 1 back); A 0x002FB9E0.
+  - Reticle/Camera 0x00CF9B60, 0x001B4C74: as Options; A 0x0029B26C.
+  - Other 0x00CF2368, 0x001ECB4C: one function, 0x002D5430(object, part,
+    direction), which also writes +0xC8/+0xCC 2 for SpotPass. Left 0
+    (queueing by hand), SpotPass's switch (0x001CFF5C) takes the move for
+    a touch on it and sets the touch object's group, +0x654, to its own
+    (0x12): the hit test then skips every other layer, and no touch (real
+    or the mouse's) finds Profile. A 0x002D50FC.
+  - Controls and More Controls 0x00CF84DC, 0x00224C18: 0x002EA7A0(+0x9C),
+    +0x118 = 1, +0x108 = -1, +0x11D bit 3 direction, then
+    0x00318DD0(object, part) for the rows' animations; outlined by
+    0x002E1CF8. A 0x003186E8 (toggles a More Controls row).
+  - Volume 0x00CF2390, 0x00224BD4: 0x002D5B40 queues at +0x9C, zeroes
+    +0xE4/+0xE8, +0xD4 |= 1; outlined by 0x002D562C. A 0x002D56CC.
+  - Profile 0x00CF8E8C, 0x001ECBF4: hash +0xA4, name +0xA8, +0xDC bit 0;
+    outlined by 0x002952F4. A 0x002E2F4C.
+  - Profile's Yes/No 0x00CEC41C, 0x0016756C: hash +0x9C, name +0xA0, +0xF0
+    bit 0; outlined in 0x00172A50. A 0x001C16D4.
+  - Subtitles 0x00CFA034, 0x001ECBBC: the outlined one an index, byte
+    +0x60, into parts at +0x18 (0x2C each) of what +0x30 keeps of kind
+    0x00D70E54 (the map 0x00326D74 walks: a sorted tree at +0x1A8/+0x1AC);
+    0x002E5608(object, part, direction) outlines one. A 0x002E5448.
+  - The hub's choice box (SpotPass's No/Yes) 0x00CF8270, 0x002A4070: one
+    part (BtDialog), each button an element fnt_02, fnt_03 (index 0, 1 at
+    +0x44); keys set the index then 0x0028F8EC and 0x002DC68C light it;
+    0x00314DF8(object) uses it (A and a touch).
+  - Music Gallery: a scrolled list, its cursor moved by 0x002576C4(object,
+    step) (0x0021E7C0 its keys); a tap picks a row. Control Configuration
+    and Air/Land Battle's settings: no outline posted on keys; touch
+    screens (sliders, a test pad).
+- Two of these update at once while a choice box is over its menu (Other
+  under SpotPass's box), so the mouse goes to the newer of the two.
+- A save state made on Windows keeps each open archive's Windows path;
+  loaded here the game could not open gamecoin.dat (shared extdata) when
+  Options opened and stopped (0xC8804471). Loading now moves each archive
+  under this run's user directory.
+
+- Practice Range (`trace/practice.state`, from Solo's Practice Range):
+  object 0x1403E7C8, vtable 0x00CF0154, its update 0x0023A9FC (through its
+  thunks 0x00224C50, 0x00224C54, 0x00224C58). The outlined part a hash at
+  +0x2E4 with its name after it (+0x2E8, a string whose buffer is at +0x20).
+  A key writes the next one's name into a queue at +0x33C and sets +0x374's
+  bit 0; the update's step 0x00283DE0(object) copies it in with
+  0x002EA7A0(+0x2E4, +0x33C), which computes the hash, plays the cursor's
+  sound and marks the part. A is 0x0030B5B4(object): Air Battle and Land
+  Battle start their practice with 0x00340FF4 and 0x00340ED4(object, 0 or
+  1), Gear opens the armory with 0x0030B68C(object), Back (the return hash)
+  goes back. The parts: AirTraining 0xE50FA312, GroundTraining 0xADD1FD65,
+  Equipment 0x71966FCC, Return 0x9A07E025. On the bottom screen Air Battle
+  is about (160, 50), Land Battle (160, 150), Gear (160, 215), Back (20,
+  200 to 230); the left arrow and the top screens' titles and hints are the
+  game's own for the key.
+- Idol Toss (`trace/idols.state`): object 0x14040508, vtable 0x00CF9400,
+  its update 0x001B4D58, a thunk of 0x001E05D4, which reads the pad into
+  +0x2E0 and +0x2E4 and calls 0x00217A0C(object). The selected part an
+  index at +0x3B8 into the scene's parts at +0x44, +0x254 and +0x1D0 (the
+  scene is what its task, 0x1403D258, keeps of kind 0x00D71458), a hash at
+  +0x48 and its name after it. Its keys step the index with
+  0x0024E9F8(object, input) and copy both; a touch, 0x001E0B60(object),
+  calls 0x0022CF38(object + 0x38, +0x48), which finds the part under it.
+  The bowl's hash is 0x4F14908C, Back is 0x9A07E025. These parts act on
+  touches and not on A: the bowl does nothing at this save's point, Back
+  goes back on release.
+- Treasure Hunt (`trace/treasure.state`): object 0x14040508 as well,
+  vtable 0x00CEEDD8, its update 0x0018AF44, a thunk of 0x001A0C64, the
+  pad's bits into its elements' flags; 0x001A0AE4 its other update. What
+  is picked a hash at +0x34 (Back 0x3B8915AB) and its name after it;
+  0x0020207C(object, part) sets both from a part, as its touch handler
+  0x001CBFCC does. The board's tiles are not parts the hit test finds, so
+  the mouse outlines none of them: its press touches where it is, and the
+  tile under it is picked, its idol shown on the top screen.
+- Vault (`trace/vault.state`, from the main menu's Vault): object
+  0x1403A5E0, vtable 0x00CF8248, its update 0x00224B80, a thunk of
+  0x00240164, which copies the pad into +0x2D8..+0x2E8 and then runs
+  0x0028E6AC (the input's bits into the parts' flags at +0x194, +0x1B8
+  and on, 0x24 apart) and 0x0028E5E4 (the hash at +0x44 to a part index,
+  0..7, and its scene's data to +0x70's +0xC). The outlined part its hash
+  at +0x44 and its name after it; 0x00345C18(object, part, 1) sets both
+  from a part, as the class's pointer handler does (0 for a key), and A is
+  0x00345FDC(object), which presses whatever hash +0x44 holds. The parts:
+  Idols E1D05CA4, Music Gallery 0A9FA648, Power Portrait ABC93BCF,
+  Offering 04E786EA, Idol Toss 84D28812, Records 9EC09AD0, AR BEA7E6CA,
+  Back 9A07E025; on the bottom screen Idols is about (100, 60), Music
+  Gallery (250, 60), Power Portrait (60, 145), Offering (160, 145), Idol
+  Toss (240, 145), Records (160, 195), AR (285, 225), Back (40, 225).
+- The Vault's Idol Toss is the hub's screen again, its object at 0x14041518
+  here and its update 0x001B4D4C, not the hub's 0x001B4D58: the same class
+  dispatches by event, so both thunks are in MENU_SCREENS. Its Back is the
+  whole strip below y 200.
+- Its other screens are chrome over a viewer: the Idols viewer (object
+  0x14040508 in its state, vtable 0x00CF93D8, update 0x001B4D70), the
+  Music Gallery's list (object 0x1403E938, vtable 0x00CFB010, updates
+  0x001B4D28 and 0x001B4CF8), Power Portrait, Records and AR. They have no
+  outline state of their own: a tap selects (Music Gallery's rows and its
+  play mark), a tap on Back leaves, and the pointer's press is that tap.
+  Their `+0x44` is not a part's hash (the Idols viewer's is a constant
+  0x928BEAA4) and 0x00345C18 does nothing on them.
+- The Music Gallery's list is the screen's own, at +0x190 (0x1403EAC8 in
+  that state): the track it has picked an index at +0xE4, the first row it
+  shows at +0xEC, its rows at +0xD0 and the ones it shows at +0xC8. Its
+  keys go through 0x0031AA88(list, down, move): with the third word 0 it
+  moves the first row by one (0x002E5B80(list, rows)), with 1 it moves the
+  picked track, down = 1 up = 0 - called by hand it took the pick 0 to 5
+  and back - but the rows it shows did not come back with it and the probe
+  left fewer of them showing, so the third and fourth words the keys pass
+  are not known yet and the wheel is not wired to it.
+
+- Screens whose parts act on touches, not on A (Idol Toss, Treasure Hunt),
+  take no click of their own: `CLICK_TOUCHES` in their MENU_SCREENS entry
+  keeps them out of `menu_clickable`, so a press over a part becomes the
+  touch at the pointer, as for unmapped controls.
+
 ## The Fiend's Cauldron
 
 States: `trace/s10.state` (your 9.state of 29 Oct, the bar), `s11` chapter
@@ -454,3 +719,154 @@ How the screens are drawn (all from `trace/s12.state`):
 - Your cauldron states were saved with the 16:9 widening in both lenses
   (aspect 1.7778 and 1.4222, the game's are 1.6667 and 1.3333): harness
   scripts write the game's back after loading.
+
+## Weapon effects: geometry shader mode 2
+
+Reported with missing Sagittarius Bow and orbital effects and repeated
+`geometry shader mode 2 is not implemented` warnings. In Zakuro's
+`zakuro-gpu/src/raster.rs`, `geometry_stage` returned no vertices for every
+nonzero mode, dropping those draws entirely.
+
+Mode 2 is fixed-primitive input through float uniforms. Register 0x252
+holds the mode in bits 0–7, vertex count minus one in bits 8–11, attribute
+stride minus one in bits 12–15, and starting uniform index in bits 16–23.
+Each complete group of vertex shader outputs fills that uniform range
+and invokes the geometry shader. This differs from mode 0, which fills
+input registers. Semantics cross-checked against Azahar's
+[pipeline registers](https://github.com/azahar-emu/azahar/blob/master/src/video_core/pica/regs_pipeline.h)
+and [geometry pipeline](https://github.com/azahar-emu/azahar/blob/master/src/video_core/pica/geometry_pipeline.cpp).
+
+Implemented that path with bounds/stride validation and b15 set after each
+invocation within the draw. A rendering regression sends three vertices
+with two attributes each to c4–c9, twice with different colors, and checks
+the final framebuffer. Both that test and the existing point-mode test
+pass. The full Vulkan GPU suite passed 178 tests, with 2 existing benchmarks
+ignored. Actual Sagittarius Bow/orbital effects still need an in-game check.
+
+Windows release rebuilt as `dist/zakuro-kiu-mouse.exe`, SHA-256
+`dcaa63994cfec8b4b4c9f02e4f1aba02b17d2a57065a0705003d418eedeaea09`.
+The previous build is `dist/zakuro-kiu-mouse-before-geometry.exe`.
+
+## Scripted menus on the top screen
+
+The top drawing's common entry after its profiling scope is `0x0072A050`;
+`0x0072A0B4` joins its normal and special scene paths. Hooking only
+`0x0072A09C` misses subtitles and several other pages. `aim_mouse/menu_top.rs`
+uses that common pair to place the native top information, then replay the
+bottom's model groups. Original model order determines overlay order, so a
+selected hub button keeps its native foreground position. Lists and boards
+use one transform, shared with the pointer inverse. Inverse coordinates snap
+within 0.0001 of an integer before touch conversion, avoiding a row changing
+from 84 to 83 through floating-point roundoff.
+
+The existing bottom drawing stop at `0x007C91C4` avoids replaying native
+bottom 2D/scenery. Individual hub controls use model-name allowlists; their
+labels are baked into their meshes. Dense pages keep native text and controls
+together. The text scissor call at `0x009164A8` and return at `0x00916580`
+map clipping through the same transform. Font calls in `0x00A36E64`'s
+function temporarily shrink the Cauldron's hint font and restore it afterward.
+
+PICA registers `0x65..0x67` provide include scissoring. The GPU previously
+ignored it; include rectangles now intersect the existing raster bounds for
+both software and Vulkan. A shifted/oversized viewport must not enlarge the
+framebuffer's tile stride: framebuffer dimensions remain authoritative.
+Regression tests cover clip color/depth writes and offset viewport rendering.
+
+Drawing dense bottom lists twice with the 3D slider off overflowed the game's
+command allocation. Only the left-eye replay is needed in mono. Stereo still
+needs a safe command-buffer expansion, so scripted overlays fall back to the
+native two-screen rendering while the slider is nonzero. The Cauldron's
+existing drawing path remains separate. `ZAKURO_MENUS_TOP=0` disables this
+feature without changing console state or the save-state format.
+
+Headless captures: `trace/one-screen/{native,wide,ultra,narrow}/`. There are
+29 scripted layouts plus the camera and generic dialog using existing pause
+rendering. Tests include native/top hover, activation, keyboard handoff,
+weapon/power scrolling, sliders, and held power dragging. Windows pointer
+acceptance is still manual.
+
+The final native/top input comparison matched all 112 recorded state words
+and all 21 accepted clicks. The held power drag initially differed because
+the fixed two-vblank initial touch could be missed during a replay. Keeping
+that initial pixel through the measured drawing interval fixes pickup;
+the resulting dropped-board screenshot is now byte-identical to native
+input. Core tests cover that interval and exact native-pixel round trips.
+The final core mouse suite passes 32 tests; the GPU suite passes 181 tests
+with two existing benchmarks ignored. High-resolution Vulkan captures of
+Solo, fusion, powers and a dialog are in `dist/one-screen-menu-screenshots/`.
+
+Windows release rebuilt as `dist/zakuro-kiu-mouse.exe`, SHA-256
+`4b61ca0642451256c3aa8378bd189693b6c6f1d6bf55d02c3f54ac48bfe089be`.
+The previous executable is `dist/zakuro-kiu-mouse-before-one-screen-menus.exe`.
+Screenshot gallery: `dist/one-screen-menu-screenshots/index.html`.
+
+Validation limit: a single Vulkan process capturing Solo and then loading
+fusion stalled during the second warmup. Fresh processes captured each of
+Solo, fusion, powers and the dialog successfully at 3x. The four full layout
+matrices and native/top input comparisons completed with software rendering.
+Repeated state loading after high-resolution Vulkan rendering needs follow-up;
+it is not covered by the passing single-state captures.
+
+## Solo hub button collisions in the resized layout
+
+The interactive buttons use their own 2D rigid-body system, not just the
+menu hit-test triangles. `0x00D48E70` points to its body list (`+0xCC` next).
+Each body points to its layout part at `+0x50` (part name at `+0x24`) and
+native element at `+0x54`. Position is `+0x74`, vertices are linked from
+`+0x58` (`+0x48` next, previous/current world points at `+0x1C/+0x28`),
+and drag/spring joints are linked from `+0x64` (`+0x6C` next, world anchor
+at `+0x58`). Restoring the joint anchors matters when borrowing coordinates.
+
+`0x002F0770` resolves body pairs. Its calls at `0x002A3374/0x002A3470`
+now borrow a common canvas coordinate space and restore native coordinates
+on return, preserving solver changes. The common uniform scale cancels,
+so each body needs the translation from its displayed placement divided by
+that scale. The wall solver call at `0x002A34C8` receives expanded bounds.
+The solver itself stays recompiled.
+
+The drag joint is input-owner `+0x600`, selected body `+0x5FC`, target at
+`+0x5D8`. Its old screen-to-world conversion and touch event filtering stop
+long PC drags at the original screen. Touch callbacks and the physics update
+(`0x0025EF84`, after its register push) maintain the virtual target from the
+host pointer, with the physical HID touch kept in its valid 320x240 range.
+This is scoped to Solo while one-screen menus are enabled.
+
+Validation: a short Practice Range drag leaves the distant Arms Altar body
+at x=9; a drag reaching its visible location moves it to approximately
+x=12.33. The long drag reaches native target x=52.19, beyond the old screen,
+and both contact and no-contact cases use physical host-pixel paths.
+
+## Chapter select scene separation
+
+Chapter select (menu index 1) keeps its native top scenery at full-window
+size. `MenStageselectUp0000` contains both scenery and the chapter artwork:
+`NL_U0000` is the backdrop, `PN_U0000`/`PN_U0001` the corner decorations,
+and `PN_U0002` the chapter picture. `MenStageselectUp0001` supplies the
+completion badges. Replay the picture, badges and top text proportionally
+at the top, with scenery and its text pass omitted from that replay.
+
+The bottom overlay retains `MenStageselectBt0000` (chapter thumbnails),
+`Bt0002` (scrollbar), `Bt0003` (difficulty controls), `Bt0004` (completion
+marks), and `Bt9999` (Back). Hide `Bt0000`'s `NN_B0000` mesh as well as
+`Bt0001`; otherwise a white bottom-screen panel follows the controls.
+The native chapter scrolling clips remain mapped with the control group;
+background and details do not accept input. All visibility/material edits
+are restored before native bottom rendering.
+
+Chapter hover must preserve its last completed native hit until the host
+pointer moves. The list scrolls when a thumbnail is outlined; repeatedly
+refreshing the same hit every frame invalidated `menu_looked` at the time a
+click arrived. The chapter-specific refresh exception preserves the native
+menu's selection and leaves animated hub-model hit refreshes unchanged.
+
+Checked headless on `trace/s11.state` at 5:3, 16:9 and 21:9
+(`trace/chapter-layout-verify.txt`): the second thumbnail is outlined and the
+list scrolled to it, Back takes the return hash `9A07E025`, and a click at
+`mfrom 140 60`, inside the chapter picture, is taken and opens the Fiend's
+Cauldron (`trace/chapter-click-verify.txt`).
+
+Windows release rebuilt as `dist/zakuro-kiu-mouse.exe`, SHA-256
+`072a802ccb0308459c6112b4580a16e5c19f4a7d97e3a7aad892fa9e643f7756`,
+and copied to `C:\Users\Patrick\Downloads\zakuro-kiu\zakuro-kiu.exe`.
+The previous executable is `dist/zakuro-kiu-mouse-before-chapter-layout.exe`.
+Manual Windows testing remains.

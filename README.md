@@ -5,10 +5,16 @@ a PC with a mouse and keyboard, on one screen of any shape:
 
 - **Mouse aim and look**: absolute aiming in the air, relative camera on the
   ground, with no touch screen involved.
-- **One screen**: everything needed in battle (narration, portraits, hearts,
-  item box, power icon, pause menu) drawn on the top screen by the game's own
-  UI code, so it stays sharp at any resolution. The bottom screen can then be
-  hidden.
+- **One screen**: everything needed in battle (narration, portraits, dialogue
+  illustrations, boss cards, hearts, item box, power icon, pause menu) drawn
+  on the top screen by the game's own UI code, so it stays sharp at any
+  resolution. Supported mouse menus also move onto the top screen,
+  with proportional artwork, grouped lists, and compact hints. Relocated
+  controls are 40% smaller, with edge buttons anchored to their screen edges.
+  Menu scenery fills the window; hints render separately without scenery.
+  The bottom screen keeps its native drawing and touch controls.
+  Set `ZAKURO_MENUS_TOP=0` to restore the original menu layout.
+  Scripted menu overlays currently require the 3D slider to be off.
 - **Widescreen at any aspect**: a wider view, not a stretched one, with no
   pop-in at the edges, the HUD the right shape and by the window's edges, and
   aim that is correct across the whole width. The window can be any size.
@@ -16,7 +22,14 @@ a PC with a mouse and keyboard, on one screen of any shape:
   a click uses it, and over nothing, nothing is lit. Keys and gamepads get
   the game's own cursor back. Outside battle (file select, chapter select)
   the pointer moves the menu's own outline, by the menu's own code as its
-  keys do, and a click does what A does.
+  keys do, and a click does what A does on release (the Vault's, from the
+  main menu, is one of these). Holding or dragging
+  keeps the game's touchscreen dragging available. The hub's menus (Solo,
+  Arms Altar, Practice Range, Idol Toss, Treasure Hunt, Options and its
+  submenus) do the same; where a part only acts on a touch (Idol Toss's
+  bowl, Treasure Hunt's board) the click is that touch.
+  Armory weapon and power lists support hover and clicks. Use the mouse
+  wheel to scroll vertically, or Shift + wheel to scroll horizontally.
 - **60 FPS**, plus a smaller HUD and reticle, and a CPU overclock for heavy
   scenes.
 
@@ -26,8 +39,8 @@ emulator (branch `kiu-mouse`), from code.bin recompiled by 3dsrecomp
 can change what they do, and the rest runs native. Gameplay must stay the
 same: each hook is checked against unhooked play over the same frames.
 
-Out of scope for now: online (Together) mode, and the menus outside battle
-but for the mouse in them.
+Out of scope for now: online (Together) mode and menus without existing
+mouse support.
 
 `PLAN.md` has the status of each feature and the work left.
 `analysis/FINDINGS.md` has the addresses and how the game works.
