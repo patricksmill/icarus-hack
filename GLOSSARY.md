@@ -114,6 +114,10 @@ _Avoid_: Aspect multiplier, widescreen scale, zoom factor
 Horizontal scale by 1/k applied to 2D sprite quads during the sprite batch flush.
 _Avoid_: UI shrink, sprite unstretch, aspect correction
 
+**High Refresh Mode**:
+The game showing a new picture on every host refresh above 60 Hz while gameplay keeps its 60 FPS speed.
+_Avoid_: High FPS, uncapped, 120 FPS patch
+
 ### Build
 
 **C Override**:

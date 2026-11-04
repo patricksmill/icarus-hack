@@ -234,6 +234,29 @@ clock and DSP sample timing. The existing interpolation path targets one
 picture between a 30 FPS game's frames at the console's normal refresh; it
 does not already provide arbitrary 100/120 Hz gameplay.
 
+**Spike: native 120 Hz (2026-11-03, uncommitted worktree
+`/home/pmill/icarus-high-refresh`, branch `prototype/high-refresh`).** A
+prototype IPS (`scripts/make_120fps_ips_PROTOTYPE.py`: 0x0048A7E4 rate 120,
+0x0048A7EC swap 1, 0x0091041C no parity, 0x00828E8C an update a vblank,
+0x00828E30 0.5) with `ZAKURO_REFRESH_HZ=120` (half the cycles a refresh, CPU
+clock and DSP sample clock unchanged) ran 180 refreshes against the 60 FPS
+patch's 90 over the same 403.3M cycles from `trace/s7.state`,
+`trace/ui-probe/hewdraw-blue.state` and `trace/ui-probe/boss-fight.state`.
+The battle held: 180/180 refreshes ran one update and one present (vsync
+manager +0xB0 = 1 every refresh, leftover 0), its camera view matched to
+0.029 units, the pause menu 0.5 s after START was pixel-identical (mean
+0.02/255), the dialogue was within one frame of the 60 FPS run, and the
+boss's bottom HUD was identical (max 1/255). The guest sound library still
+advances once per game update: the WAV keeps the same 49,280 samples but its
+content diverges from sample 483 (DSP service `dsp:` at 0x00CB35B4, client
+init referenced at 0x0010D274; the per-update sound entry is not found). The
+boss scene missed one refresh in 180 as per-second interpreted instructions
+rose 1.79x (59.1M to 106.0M). Hands-on on Windows (default overclock 2):
+dialogue audio was not in sync with the scene, and frames dropped noticeably.
+**Decision: parked.** High Refresh Mode keeps the game at 60 updates a second
+and draws pictures in between in the presenter. Native 120 would first need
+the sound update found and kept at 60 Hz, and the frame drops profiled.
+
 ## Repeating the measurements on Windows
 
 `dist/kiutrace-perf.exe` is built from the current harness. It loads your
