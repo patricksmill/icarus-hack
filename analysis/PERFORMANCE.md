@@ -484,3 +484,14 @@ Windows release cross-build completed successfully and was copied to
 The prior executable is retained as `dist/zakuro-kiu-mouse-before-glow.exe`.
 The final native smoke capture matches the verified fixed capture byte for
 byte on both screens.
+
+## High Refresh Mode delivery and manual acceptance, 4 November 2026
+
+High Refresh Mode presents pictures at the host monitor refresh rate (120/144/240 Hz) using presenter interpolation between real frames, with the guest locked at 60 updates per second (ADR 0006).
+
+- **Executable delivery**: Rebuilt Windows release executable from integration branch `high-refresh` and installed as `dist/zakuro-kiu-mouse.exe` (SHA-256 `307e090430c2d18860e08a5f8a07c3f03368ccf84fd5e24198bb1007235cb78d`). Previous executable retained as `dist/zakuro-kiu-mouse-before-high-refresh.exe`.
+- **Readout & Pacing**: Split FPS display reflects pictures shown and game updates (`144 shown / 60 game` at 144 Hz). At 120 Hz, pictures alternate real and $t=0.5$. Non-multiple host rates (144, 165) follow the clock sequence ($0, 0.417, 0.833, \dots$).
+- **Gameplay & Audio**: Game updates remain strictly 60/s, audio DSP sample clock and dialogue sync are identical with mode on or off. Stalls (>2 refreshes) safely drop game rate while falling back to real pictures.
+- **Stereo 3D**: Both eyes share identical `PictureKind` and $t$ decisions with zero tearing between eyes.
+- **Input & Menus**: Screen Transform and menu hit-testing operate strictly on real frames; In-Game and Scripted Menu clicks land on nominal controls. Per-screen 60 cap mechanism in place.
+- **Settings migration**: Old `frame_interpolation = true` migrates to `high_refresh_mode = true` cleanly.
