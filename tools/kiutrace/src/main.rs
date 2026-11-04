@@ -21,6 +21,8 @@
 //!   save <file> / load <file>     a Zakuro saved state
 //!   scan                          list objects whose first word is an aim vtable
 //!   peek <addr> <count>           print count words at addr as hex and float
+//!   parts <object>                print the active menu object's retained native descriptor kinds and words
+//!   expectword <addr> <value>      assert a native game-state word, such as the keyboard Cursor's Control hash
 //!   poke <addr> <value>           write a word, a float when it has a point
 //!   code <addr> <word>            write a word of code, past the page's permissions
 //!   checkcode                    recheck the library after loading a state or patching code
@@ -37,6 +39,10 @@
 //!   mhover <x> <y>                hover over the top screen, in its 400 by 240 pixels
 //!   mfrom <x> <y> [button hash]   hover there using an original bottom-screen point
 //!   mdrag <x0> <y0> <x1> <y1> <frames> drag those native points through the top-screen mapping
+//!   layer <index> <x> <y> <w> <h> move/resize a Scripted Menu layer through the editor
+//!   visible <index> <0|1>         hide/show a Scripted Menu editor item, without changing its geometry
+//!   pausevisible <span|center|left|right|corner> <0|1>  hide/show one Pause rule group
+//!   navlink <from> <up|down|left|right> <to|native> set an explicit editor navigation link
 //!   cauldron                      draw the Fiend's Cauldron's two screens on the top screen, laid out to fit it
 //!   ctouch <x> <y>                touch the Fiend's Cauldron drawn on the top screen at its pixel, x of its 400
 //!   cdrag <x0> <y0> <x1> <y1> <frames>  and drag across it
@@ -351,8 +357,8 @@ fn main() {
                 }
             }
             "cauldrontop" => {
-                use zakuro_core::aim_mouse::{CauldronLayout, CauldronPlace};
-                let place = |i: usize| CauldronPlace { to: [float(i), float(i + 1), float(i + 2), float(i + 3)], from: [float(i + 4), float(i + 5), float(i + 6), float(i + 7)] };
+                use zakuro_core::aim_mouse::{CauldronLayout, Placement};
+                let place = |i: usize| Placement { to: [float(i), float(i + 1), float(i + 2), float(i + 3)], from: [float(i + 4), float(i + 5), float(i + 6), float(i + 7)] };
                 let layout = CauldronLayout { top: place(1), panel: place(9), bar: place(17), dial: float(25), back: place(26), move_out: place(34), rest: place(42) };
                 let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
                 aim_mouse.cauldron_on_top = true;
@@ -388,6 +394,75 @@ fn main() {
                 let frames = system.frames;
                 println!("battle {} pause {} cauldron {} menus {} part {:08X?}", aim_mouse.in_battle(frames), aim_mouse.pause_menu_shown(frames), aim_mouse.cauldron_shown(frames), aim_mouse.menus_on_top_shown(frames), aim_mouse.hovered_menu_part());
             }
+            "parts" => {
+                let owner = read32(&mut system, num(1) + 0x30);
+                let head = owner + 0x1A8;
+                let mut pending = vec![read32(&mut system, owner + 0x1AC)];
+                let mut seen = std::collections::HashSet::new();
+                while let Some(node) = pending.pop() {
+                    if node == 0 || node == head || !seen.insert(node) || seen.len() > 128 { continue; }
+                    pending.extend([read32(&mut system, node + 8), read32(&mut system, node + 12)]);
+                    let kind = read32(&mut system, node + 0x14);
+                    let kept = read32(&mut system, node);
+                    let descriptor = read32(&mut system, kept + 0x1C);
+                    if descriptor == 0 || !system.memory.is_readable(descriptor, 0x100) { continue; }
+                    let words: Vec<_> = (0..64).map(|i| format!("{:08X}", read32(&mut system, descriptor + i * 4))).collect();
+                    println!("  kind {kind:08X} descriptor {descriptor:08X}: {}", words.join(" "));
+                }
+            }
+            "layers" => {
+                let mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                for (name, to) in mouse.editor_layers() {
+                    println!("  {name}: {to:?}");
+                }
+            }
+            "layer" => {
+                let mouse = system.aim_mouse.as_mut().expect("menutop before layer");
+                let index = num(1) as usize;
+                assert!(index < mouse.editor_layers().len(), "visible editor layer");
+                mouse.set_editor_layer(index, [float(2), float(3), float(4), float(5)]);
+            }
+            "visible" => {
+                let mouse = system.aim_mouse.as_mut().expect("menutop before visible");
+                let index = num(1) as usize;
+                assert!(index < mouse.editor_layers().len(), "editor item");
+                mouse.set_editor_layer_visible(index, num(2) != 0);
+            }
+            "pausevisible" => {
+                let mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                let mut rules = mouse.pause_rules();
+                let rule = match words.get(1).copied() {
+                    Some("span") => &mut rules.span,
+                    Some("center") => &mut rules.center,
+                    Some("left") => &mut rules.left,
+                    Some("right") => &mut rules.right,
+                    Some("corner") => &mut rules.corner,
+                    _ => panic!("pausevisible requires a Pause rule name"),
+                };
+                rule.visible = num(2) != 0;
+                mouse.set_pause_rules(rules);
+            }
+            "navlink" => {
+                use zakuro_core::aim_mouse::NavigationDirection;
+                let direction = match words.get(2).copied() {
+                    Some("up") => NavigationDirection::Up,
+                    Some("down") => NavigationDirection::Down,
+                    Some("left") => NavigationDirection::Left,
+                    Some("right") => NavigationDirection::Right,
+                    _ => panic!("navlink direction must be up, down, left or right"),
+                };
+                let mouse = system.aim_mouse.as_mut().expect("menutop before navlink");
+                let controls = mouse.editor_navigation_controls();
+                let from = num(1) as usize;
+                let to = (words.get(3).copied() != Some("native")).then(|| num(3) as usize);
+                assert!(controls.iter().any(|(index, _)| *index == from), "navigation source Control");
+                assert!(to.is_none_or(|to| controls.iter().any(|(index, _)| *index == to)), "navigation destination Control");
+                mouse.set_editor_navigation_link(from, direction, to);
+            }
+            "expectword" => {
+                let actual = read32(&mut system, num(1));
+                assert_eq!(actual, num(2), "native word at {:#010X}", num(1));
+            }
             "expectmenu" => {
                 let expected = (words[1] != "none").then(|| num(1));
                 assert_eq!(system.aim_mouse.as_ref().and_then(|mouse| mouse.hovered_menu_part()), expected, "hovered menu part");
@@ -401,9 +476,14 @@ fn main() {
             "wide" => system.aim_mouse.get_or_insert_with(Default::default).widen = float(1) / (5.0 / 3.0),
             "hud" => system.aim_mouse.get_or_insert_with(Default::default).hud_scale = float(1),
             "calls" => {
+                let addresses: Vec<u32> = words[1].split(',').map(parse).collect();
+                if let Some(library) = system.recompiled.as_mut() {
+                    for &address in &addresses {
+                        println!("  interpreting {address:08X}: {} functions", library.interpret_at(address));
+                    }
+                }
                 for _ in 0..num(2) {
                     let max = if words.len() > 3 { num(3) } else { 8 };
-                    let addresses: Vec<u32> = words[1].split(',').map(parse).collect();
                     if !calls_frame(&mut system, input, &addresses, max, &mut frame) {
                         return;
                     }
