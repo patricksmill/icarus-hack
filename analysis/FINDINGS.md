@@ -178,6 +178,18 @@ sprite. The saved fixture is `trace/ui-probe/hewdraw-blue.state`.
   mark their bindings dirty. Suppress decorative bands by discarding their
   pending sprite batch, leaving dirty material state for the next visible
   draw, rather than submitting off-screen degenerate quads.
+- Sprite flush flag `0x08` (context +0x50) also writes the GPU scissor
+  (registers 0x65-0x67) from context +0xFC/+0x100, packed in framebuffer
+  coordinates computed for the bottom screen. The power panel's highlight
+  flush (`0x00A116B0`) sets one around the cards, so on the top screen the
+  icons and counters after it were clipped away. Mirrored replays move that
+  rectangle with the quads (`place_scissor`) and restore it on return.
+- Chapter 4's rail (texture `0x04518780`, ETC1A4) is a geometry-shader tube:
+  28 centreline vertices become 360 triangles. Its setemit instructions use
+  the winding bit (22), which swaps a completed triangle's first two
+  vertices; ignoring it culled half the outer faces and drew inner ones,
+  giving the opaque, thorny look. The stage-4 combiner then gives
+  `tex0.a * 0.898` alpha, i.e. the translucent tube seen on hardware.
 
 Validation artifacts are under `trace/ui-probe`: twenty-four software layouts
 (four scenes, three aspect ratios, two HUD scales), 2x hardware captures,
@@ -399,6 +411,55 @@ s11 and s12). Found by the functions that run only with a touch held, from
   and sound 0x11 plays (0x00BB9C34, 0x0036C438) as for RIGHT, and nothing
   opens; 0x003374D0 then opens it. A descriptor's +0x18 is the {hash,
   name} 0x00302488 takes.
+- File Select replay/editor (3 Nov): the 2D foreground-material override
+  removes the 3D book covers while leaving their numerals and names. In
+  `s1`, the red Book II sample has zero artwork pixels with that override,
+  versus 322 after retaining native materials/depth; the native bottom
+  sample remains 1,918 pixels. `MenSelfileBt0000/1/2` are Book I/II/III,
+  `MenSelfileBt0003` is Back, `MenSelfileBt0004` is How to Play.
+  Their hashes are `A70D5C65/A70D5C64/A70D5C67/928BEAA4/8D79D12E`.
+  `MenDemoBt0000` is the bottom background; HOME text is a separate font
+  draw, not an activatable Control. The complete information Board is
+  `MenSelFileUp0001` in layer B.
+- The File Select editor indices are 0..2 books, 3 Back, 4 How to Play,
+  5 HOME hint, 6 information Board, 7 background. Native book-name font
+  anchors remain in their respective thirds of the 320px bottom screen,
+  above y190; HOME anchors are around (102,207) and (68,226). Select a
+  book's name by that native column, preserving all native shadow draws,
+  and let its 3D cover turn outside the nominal Placement source box.
+  The native hit test validates those extensions, not a second hit layout.
+  Retain the original full-Board viewport/projection and expand only the
+  book's scissor. A full-canvas isolated projection displaces the native
+  font draws and reveals book faces normally clipped off-screen. The
+  corrected capture has zero unexpected pixels to the left of the placed
+  Boards, with names attached to their books at normal and wide aspects.
+- File Select's black cross-screen connectors are the `RotObj*` mesh
+  nodes: `RotObj0000` on Book I and the information Board, `RotObj0004`
+  on Book II and `RotObj0005` on Book III. Hide those nodes only in
+  transformed File Select replay; retain `Book01/02/03` and `Book04/05`
+  cover/page meshes, native materials, and the original bottom pass.
+  Suppressing `Book04/05` did not remove the connectors and was reverted.
+  The capture strip above the covers changed from 76/51/34 black pixels
+  for selected I/II/III to 0/0/0 after suppressing `RotObj*`.
+- Editor visibility is stored separately from geometry as hidden
+  `(screen, part)` pairs. Hidden entries retain their editor indices and
+  source boxes but leave draw order, pointer candidates and explicit
+  navigation destination lists. An empty draw order for an active Screen
+  must not fall back to its unfiltered parts. File Select HOME is index 5;
+  a moved HOME rectangle changes from 4,800 visible pixels to zero when
+  hidden, survives a console-state reload, and returns when shown.
+- Cardinal File Select seams, after native repeat checks and accessor
+  `003023F0`: Left `002BC5A4`, Right `002BC618`, Up `002BC688`, Down
+  `002BC6CC`. r0 is the current graph node, r5 the Screen object. A linked
+  action calls native `00302488(r5, target_node+0xC)`, which sets both the
+  selected hash/name and book index before calling `003381AC(...,0)`.
+  Resume at `002BC66C` after Left/Right or `002BC6E8` after Up/Down so
+  the remaining native input handling stays intact. A self-link resumes
+  without calling the Outline helper. A plain directional-slot bias is
+  insufficient: native Left/Right also performs its adjacent book step.
+  Live checks cover all four directions to Back, I→III and III→I with
+  matching `+0xD4` indices, a held self-link, native-default restoration,
+  circle-pad input, and native A opening How to Play.
 - Chapter select (object 0x1403E7A0 in s11, vtable 0x00CF243C): the part
   with the outline at +0x6C/+0x70 (BtThumbnail on the chapters; DOWN
   moves it to Return through 0x003668E8, which posts it). The chapter is
@@ -439,6 +500,21 @@ s11 and s12). Found by the functions that run only with a touch held, from
   ("Present"), Vault E250C577, Together E2DCC735, Options D929D345, Back
   9A07E025, AR 4A7AE3E3, guide FD90A21D. Functions of the 0x0034E/0x0036F
   family may be shared by the hub's other button menus.
+  The shared directional-name resolver is `0x003506C4(record, direction)`.
+  Cardinal codes observed with real pad input are Up 7, Down 1, Left 3,
+  Right 5. A graph record contains its own hash/name at +0xC; linked records
+  are reached through +4. Direction 9 takes the default/self-name path.
+  Editor links redirect this resolver to the destination record with direction
+  9, leaving native repeat, availability checks, name copying, sound and A
+  activation in the original caller. The s14 replay confirms four cardinal
+  overrides, circle-pad Right, a held self-link, and native fallback after
+  removing a link. Diagonal codes are not overridden.
+  Solo Hub inlines the directional record reads after `0x0034E870` returns:
+  `0x00321720` Left (+0x64), `0x0032178C` Right (+0x38),
+  `0x003217F8` Up (+0x90), `0x00321864` Down (+0xBC).
+  These hooks bias the returned record so the caller reads the destination's
+  self-name through its existing slot. Save-state checks redirect Move Out
+  Right to Practice Range and Arms Altar Redeem Hearts Right to Back.
 
 - Solo hub (`trace/solo.state`, from s14's Solo): object 0x1403A5E0,
   vtable 0x00CFC3D0. Its live update is 0x002ECCF4 (called directly by
@@ -590,6 +666,104 @@ its head sentinel; +0x10 is node color, not a leaf marker.
   Back 9A07E025; on the bottom screen Idols is about (100, 60), Music
   Gallery (250, 60), Power Portrait (60, 145), Offering (160, 145), Idol
   Toss (240, 145), Records (160, 195), AR (285, 225), Back (40, 225).
+  Vault's direction handler calls the shared resolver `0x003506C4` (return
+  address `0x002DC4F4` in `f_002DC458`) with the current part's hash at
+  record `+0xC`, so editor links redirect it exactly as the hubs do. Verified
+  from `trace/vault.state`: Right from Idols with a link reaches Back
+  (9A07E025), and removing the link restores Records (9EC09AD0).
+- Options and its Scene child pages: Options' four parts are Options
+  6C7DCDF1, Volume 53977FC2, Other FB57B10C and Back `928BEAA4` — Back is
+  *not* the shared 9A07E025. Practice Range's are Air Battle E50FA312,
+  Land Battle ADD1FD65, Gear 71966FCC and Back 9A07E025. Their key handlers
+  inline the graph lookup rather than calling `0x003506C4`. Options gets
+  its current node from `0x002B481C`, returning to Left `0x0026E0A0`,
+  Right `0x0026E114`, Up `0x0026E18C`, Down `0x0026E204`. Practice gets
+  it from `0x002CF954`, returning to `0x00284898`, `0x00284948`,
+  `0x002849F8`, `0x00284AA8` respectively. Their name slots are +0x64,
+  +0x38, +0x90, +0xBC, as Solo's. All eight cardinal redirects to Back
+  passed native Cursor assertions. The earlier `0x003D4114` observation
+  concerned graph rebuilding, not directional input; compiled callees
+  were invisible to the old `calls` probe. `calls` now interprets its
+  requested targets before stepping.
+- The Options child Screens use the same circular navigation nodes
+  (current hash +0xC, next +4) despite different current-node accessors.
+  The editor hooks these accessor returns before the caller reads a name:
+
+  | Screen | Left | Right | Up | Down |
+  | --- | --- | --- | --- | --- |
+  | Other | 0023C1AC | 0023C238 | 0023C2C8 | 0023C384 |
+  | Controls/More Controls | 002E135C | 002E1854 | 00293848 | 002938CC |
+  | Reticle/Camera | 00219A64 | 00219AD8 | 00219B50 | 00219BC8 |
+  | Profile | 002474B0 | 0024751C | 00247588 | 002475F4 |
+  | Profile Yes/No | 0019560C | 0019568C | 0019570C | 00195784 |
+  | Subtitles | 002535C0 | 00253610 | 00253660 | 002536B0 |
+
+  Their current-node accessors are 00289880, 00319228, 00252168,
+  002958E8, 001C1DC0 and 0029B8BC respectively. All cardinal redirects
+  passed native Cursor checks, including Subtitles' byte +0x60 (Off = 0).
+- Armory — Gear (vtable 00CEC2B8) uses the same graph through its accessor
+  `0x002FCD34`, from key handler `f_002B6DB8`, outlining with
+  `0x00334D3C(object, name)` and keeping the hash at +0x2E4. The editor
+  hooks its returns: Left `002B75E4` (+0x64), Right `002B7638` (+0x38), Up
+  `002B7688` (+0x90), Down `002B76E0` (+0xBC). Parts: `MenEquipBt0001`
+  Weapons/A754BFE8, 0002 Powers/CE77C7CF, 9999 Back/9A07E025, 0000 the
+  backdrop. Verified from `trace/armory-gear.state`: Down reaches Powers
+  natively, Back when linked, and Back's linked Right reaches Powers.
+- Armory — Categories (00CEE1C0) steps an index, not names: tile at +0xDC
+  (0 All to 9; 10 Back), previous at +0xE0. Its key handler (from `0x0019C470`) calls
+  `0x001C66BC(object, table)` per direction, Left 00CA3180, Right 00CA2AA0,
+  Up 00CA2730, Down 00CA2E10 (four more are diagonals); each table has 11
+  rows of 0x28 bytes listing candidates, -1 terminated, the first with
+  weapons (`0x001FC6C4(tile - 1) > 0`) taken at `0x001C670C` from r4. From
+  Back the step returns to +0xE0 whatever the candidate. The editor hooks
+  the loop head `0x001C66CC` (r6 = 0) to take a linked tile, writing +0xE0
+  first when leaving Back; `0x001C66E4` returns 0 for a self-link. Tiles
+  are `MenEquipBt0102`..`0111` in index order, Back `MenEquipBt9999`.
+  Verified from `trace/armory-weapons.state`: All→Back, Back→Bow and Bow's
+  self-link, with native Down from Bow reaching Club (6).
+- Armory model roles: Weapons list `MenEquipBt0120` rows (0125 cursor),
+  0121 order (X), 0122 page bar, 0123 Equipped (Y), 0100/0101 backdrop.
+  Powers `MenEquipBt0203` grid and tabs (0206 pieces), 0211 list (0215
+  cursor), 0204 Autofill, 0212 category header, 0205 OK, 0200 backdrop.
+  Replaying the whole Board for each Control stops the top replay after a
+  few frames (drawing buffer); each Control draws its own models, and only
+  Controls that show text replay the text pass.
+- Harvested child Control identities from native hits:
+  Other: `MenOptionOtherBt0001` name/49C14849, 0002 caption/F28BAA60,
+  0004 itunomani/9E610C53, 9999 return/928BEAA4.
+  Controls: `MenOptionControlBt0001` button/DE4F96DF,
+  0002 touch/56866028, 0006 opt/FB565F88, 9999 return/928BEAA4.
+  More Controls: 0004 guide/8D79D12E, 0008 lead/4998C4E7,
+  0007 asis/4A0C9579, 0003 auto/4A0F894B, 0005 test/49B8FADA.
+  Its mode is bit 0 of object +0x11D: clear for Controls, set for More
+  Controls (confirmed in states s17/s23 and 002E19F0..002E19F8).
+  Reticle/Camera: `MenOptionCtlTpenBt0001` groundBtn/E84BA0DD,
+  0002 airBtn/21E46FF0, 9999 return/928BEAA4.
+  Profile: `MenOptionNameBt0001` Name/4A41C1D7, 9999 Return/9A07E025.
+  Profile Yes/No: `MenSelnameBt0001` BtYes/3837AABD,
+  0002 BtNo/4F14658D, 9999 BtReturn/3B8915AB.
+  Subtitles: `MenOptionOtherCaptionBt0001` upperButton/6A1911BF,
+  0002 lowerButton/E76D363A, 0003 offButton/DD5F933C.
+- Volume: `MenOptionSoundBt0002` music/6AFB5539,
+  0003 se/CD949985, 0004 voice/002A0EEA,
+  0005 soundTest/1C05D789, 9999 return/928BEAA4.
+  Models 0001 and 0006 contain shared labels/slider pieces; keep them
+  with each slider, clipped by its Placement. Native directional helpers
+  002D590C/002D5B40/002D5D74/002D699C handle Up/Down/Left/Right.
+  Linked directions queue the chosen name from retained kind 00D70ED8,
+  using the native key-repeat flags and 002EA7A0; unlinked directions
+  retain the original slider adjustment. In s18 Music's float at +0xD8
+  (1403EA08) is 79: a moved slider drag changed it to 10; holding a Left
+  self-link for 40 frames left it at 79.
+- SpotPass Dialog: native object 1404F4E0 in s27, choice at +0x44
+  (1404F524): No = 0, Yes = 1. Both hit BtDialog/B1EBC922; distinct
+  elements, not distinct model hashes. Split its caption and choices by
+  native source rectangles and crop the shared MenCmnWindowBt0000 model.
+  The store at 00241368 keeps native repeat/lighting/activation; LR
+  002412A4 identifies Left and 0024130C Right. Native Up/Down do not
+  select a choice, so the editor reports those axes unavailable.
+  Both horizontal self-links passed Cursor assertions; a moved No at
+  native (80,190) dismissed the Dialog without enabling SpotPass.
 - The Vault's Idol Toss is the hub's screen again, its object at 0x14041518
   here and its update 0x001B4D4C, not the hub's 0x001B4D58: the same class
   dispatches by event, so both thunks are in MENU_SCREENS. Its Back is the
@@ -616,6 +790,44 @@ its head sentinel; +0x10 is node color, not a leaf marker.
   take no click of their own: `CLICK_TOUCHES` in their MENU_SCREENS entry
   keeps them out of `menu_clickable`, so a press over a part becomes the
   touch at the pointer, as for unmapped controls.
+
+## Screen anchors
+
+Canonical Screen names are in `GLOSSARY.md`; this table is the only place their code anchors live. Scripted Menu rows come from `MENU_SCREENS` in `tools/zakuro/crates/zakuro-core/src/aim_mouse.rs`; `vtable` is the object's first word.
+
+| Screen | vtable | update | outline | A / use |
+| --- | --- | --- | --- | --- |
+| File Select | 0x00CEC3F4 | 0x002A3EC4 | outline_file | 0x003374D0 |
+| Chapter Select | 0x00CF243C | 0x002A3FCC | outline_chapter | 0x003675C0 |
+| Main Menu | 0x00CFBD9C | 0x002A3F9C | outline_buttons | 0x0036F59C |
+| Options | 0x00CEAE98 | 0x00224BA0 | outline_queued | 0x002FB9E0 |
+| Other | 0x00CF2368 | 0x001ECB4C | outline_other | 0x002D50FC |
+| Controls | 0x00CF84DC | 0x00224C18 | outline_controls | 0x003186E8 |
+| Reticle/Camera | 0x00CF9B60 | 0x001B4C74 | outline_queued | 0x0029B26C |
+| Subtitles | 0x00CFA034 | 0x001ECBBC | outline_subtitles | 0x002E5448 |
+| Volume | 0x00CF2390 | 0x00224BD4 | outline_volume | 0x002D56CC |
+| Profile | 0x00CF8E8C | 0x001ECBF4 | outline_profile | 0x002E2F4C |
+| Profile Yes/No | 0x00CEC41C | 0x0016756C | outline_yes_no | 0x001C16D4 |
+| SpotPass Dialog | 0x00CF8270 | 0x002A4070 | outline_dialog | 0x00314DF8 |
+| Solo Hub | 0x00CFC3D0 | 0x002ECCF4 | outline_solo | 0x00370300 |
+| Arms Altar | 0x00CFCA28 | 0x002A1FD8 | outline_altar | 0x00322C34 |
+| Armory — Gear | 0x00CEC2B8 | 0x002B6DB8 | outline_armory | none (list input) |
+| Armory — Redeem Hearts | 0x00CEFCA8 | 0x00238CBC | outline_armory | none (list input) |
+| Armory — Convert to Hearts | 0x00CEEBFC | 0x001C9734 | outline_armory | none (list input) |
+| Armory — Fuse Weapons | 0x00CEE148 | 0x00230B5C | outline_armory | none (list input) |
+| Armory — Powers | 0x00CEC2E0 | 0x002BB14C | outline_armory | none (list input) |
+| Armory — Weapons | 0x00CEE1E8 | 0x0019CDC8 | outline_armory | none (list input) |
+| Armory — Categories | 0x00CEE1C0 | 0x0019BDC4 | outline_armory | none (list input) |
+| Practice Range | 0x00CF0154 | 0x0023A9FC | outline_practice | 0x0030B5B4 |
+| Idol Toss (Solo Hub) | 0x00CF9400 | 0x001B4D58 | outline_idol | none (click is a touch) |
+| Treasure Hunt | 0x00CEEDD8 | 0x0018AF44 | outline_treasure | none (click is a touch) |
+| Vault | 0x00CF8248 | 0x00224B80 | outline_vault | 0x00345FDC |
+| Idol Toss (Vault) | 0x00CF9400 | 0x001B4D4C | outline_idol | none (click is a touch) |
+| Control Configuration | in-game Options page 5 | 0x00A0ACF0 | none | drags what it holds |
+| Pause | object at ctx+0x243C | 0x0060DC7C input | pause options page at +0x678 | touch: 0x00A0867C main page, 0x00A06188 Options |
+| Retreat Dialog | dialog object | 0x007226C4 input | picked button at +0x294 | touch began now |
+| Music Gallery | 0x00CFB010 (list) | 0x001B4D28, 0x001B4CF8 | none | keys 0x0031AA88 |
+| Fiend's Cauldron | pot task 0x00CF9AEC | 0x00251624, 0x00251C40 | cursor class 0x00CEE170 | touch |
 
 ## The Fiend's Cauldron
 
@@ -759,6 +971,13 @@ use one transform, shared with the pointer inverse. Inverse coordinates snap
 within 0.0001 of an integer before touch conversion, avoiding a row changing
 from 84 to 83 through floating-point roundoff.
 
+During menu entrance animations, hub models can appear before the menu's
+input-update hook starts. The renderer recognizes the Solo, main, Arms Altar,
+Practice Range, Vault and Options hub models during that interval and uses
+their normal layout; input remains disabled until the menu update identifies
+its owner. In the main-to-Solo trace, Solo models first appeared 21 frames
+before its input update.
+
 The existing bottom drawing stop at `0x007C91C4` avoids replaying native
 bottom 2D/scenery. Individual hub controls use model-name allowlists; their
 labels are baked into their meshes. Dense pages keep native text and controls
@@ -870,3 +1089,33 @@ Windows release rebuilt as `dist/zakuro-kiu-mouse.exe`, SHA-256
 and copied to `C:\Users\Patrick\Downloads\zakuro-kiu\zakuro-kiu.exe`.
 The previous executable is `dist/zakuro-kiu-mouse-before-chapter-layout.exe`.
 Manual Windows testing remains.
+
+## Button prompts in the stand-in system font
+
+Hint strips and dialogs write the console's button symbols as Private Use
+characters of the shared system font: `U+E000` A, `E001` B, `E002` X,
+`E003` Y, `E004/E005` L/R, `E006` +Control Pad, `E052..E055` L/R/ZL/ZR,
+`E073` HOME, `E077` Circle Pad, `E079..E07E` pad directions. French text
+also uses `E068..E06A` for the ordinal superscripts "er", "re", "e". Seen in
+the game's data: `"\uE000 OK   \uE001 Cancel"`, `"\uE052/\uE053: Rotate"`,
+`"\uE073HOME"`, and file select's `\uE073HOME / go to HOME Menu` strip.
+
+Without a dump, Zakuro's generated stand-in font (`services/shared_font.rs`)
+had only JIS, Latin and punctuation, so every one of those characters
+missed its CMAP lookup and the prompt lost its button. The stand-in now
+draws them (`services/prompts.rs`), each button as a `Label` set through
+`System::set_prompts`: the console's look, a keycap, a mouse button, or a
+controller's button (Xbox letters, or PlayStation shapes by controller
+name). The frontend picks labels from the last-used device and current
+bindings, and redraws on rebinding or device switch. A redraw rewrites the
+mapped block in place, only when its headers match a fresh build, so a
+dumped font or an older state's differently-sized stand-in is left alone.
+Symbol advance is fixed at 24 so already laid-out lines stay valid.
+
+Validation: fresh boot to file select shows the HOME symbol with the
+stand-in, matching the dump's placement; loading that state then switching
+to keyboard labels showed an `Esc` keycap in the same strip two frames later.
+
+Windows release rebuilt as `dist/zakuro-kiu-mouse.exe`, SHA-256
+`442ba2bdf5e0c8cb41f1952fe21ead02ef4739800ecb5de109d5818632ad5e75`.
+The previous executable is `dist/zakuro-kiu-mouse-before-prompts.exe`.

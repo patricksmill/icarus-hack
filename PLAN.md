@@ -379,7 +379,7 @@ All seven idle screens match native output on both framebuffers; board
 pickup, movement and release also match native touch. Fifteen core mouse
 tests and the wheel-direction check pass. Windows release rebuilt and
 copied to `C:\Users\Patrick\Downloads\zakuro-kiu-mouse.exe`
-(SHA-256 `6b259667dbd1b0c4f47d278f49144d6bc6635d5de9542e769ac829a409675252`).
+(SHA-256 `d44bf09c2536527494840567c6ca9d29ece56a4cb3c3a7b235387751db1b7889`).
 Manual Windows mouse testing remains.
 
 - Practice Range (`trace/practice.state`, `trace/menupractice.txt`): Air
@@ -685,9 +685,46 @@ The final menu layout suite passes 20 tests. Headless captures verify the
 chapter thumbnail hover and Back outline, and the chapter click script uses
 a point inside the thumbnail (`mfrom 140 60`) through the top-screen mapping.
 
-Windows executable rebuilt and copied to
-`C:\Users\Patrick\Downloads\zakuro-kiu\zakuro-kiu.exe` and
+Windows executable rebuilt from `main` and copied to
 `dist/zakuro-kiu-mouse.exe` (SHA-256
-`072a802ccb0308459c6112b4580a16e5c19f4a7d97e3a7aad892fa9e643f7756`); the
-previous build is `dist/zakuro-kiu-mouse-before-chapter-layout.exe`. Manual
+`260cd369426f3b8ea52ea0a4520371cb8d26f18d509b2d4719761d265dc842e4`); the
+previous build is `dist/zakuro-kiu-mouse-before-save.exe`. Manual
 Windows mouse testing remains.
+
+### Screen Transform pipeline (in progress)
+
+Goal: every game-owned Screen (In-Game Menu, Scripted Menu, Fiend's Cauldron)
+goes through one transformation process — detect, capture, seat, replay, map
+input — with one descriptor per Screen and one `Placement` list shared by
+drawing and hit-testing. Pipelines stages are shared; per-Screen rows carry
+only identity, input mode, outline, activation, layout, and wheel support.
+The eight behaviour invariants become the per-Screen acceptance contract.
+
+A dev-only egui menu editor edits `Placement` geometry, visibility and anchors
+after the `Placement` model exists and before the 26 Scripted Menus migrate.
+It exports canonical `Placement` rows for the committed descriptor; release
+builds load no editor data. It does not edit game content or input semantics.
+
+Migration order: Pause, Retreat Dialog, Options family, Scripted Menus,
+Fiend's Cauldron, each behind its existing env flag until parity passes, then
+the legacy path is deleted. Decided in `docs/adr/0005-screen-transform-pipeline.md`
+and `docs/agents/screen-transform.md`. The Pause slice has landed: `ScreenSpec`
+registry, `ScreenTransform` capture/replay state, and one `Placement` list for
+drawing and touch mapping. Retreat Dialog shares that call table and its hover
+state is owned by the transform. The 26 Scripted Menus now use the same
+`ScreenSpec` registry for detection, outline, activation and layout data
+(`LayoutKind`, with the hub boards and per-Screen hints moved into the rows).
+Parity: core tests pass; 14 save-state captures (file select, chapter select,
+main menu, Options family, Armory, Solo, Altar, Practice, Vault, dialogs) are
+byte-identical before and after both registry merges. `CauldronPlace` is gone:
+Pause, Scripted Menus and the Cauldron share one `Placement` type for drawing
+and hit-testing. The Cauldron is also registered (`TaskProbe`), with its shown,
+pouring and task state owned by the transform. Pause layout rules (`PlacementRule`
+with anchor and scale mode) are editable data. The dev-only editor
+(`--menu-editor`, F2) edits them live and exports `menu-layout-export.txt` with a
+Rust fragment and a change request. The same overlay draws a canvas over the
+live top screen with the active Scripted Menu's layers: body drag moves, corner
+handle resizes, and the override is applied on the next layout. **Save layout**
+writes `menu-layout.toml` in the data directory and the next `--menu-editor`
+run loads it; normal launches ignore it. Next: generalize Scripted overrides
+into rules that survive every aspect width, then aspect previews.

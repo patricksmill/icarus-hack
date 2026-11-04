@@ -23,3 +23,7 @@ analysis/*_disasm.txt
 analysis/mod/
 # emulator save data written by test runs
 user/
+
+# test run image / trace frame dumps
+out*/
+kiutrace-out/
