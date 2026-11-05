@@ -648,9 +648,9 @@ layouts. Host pointer ownership resets after loads, focus loss and resize.
 
 Headless layout captures cover 5:3, 16:9, 21:9 and a narrow window. Core
 placement/input tests and the Vulkan GPU suite pass. Windows pointer testing
-remains an acceptance check. Stereo scripted menu replay currently falls back
-to native rendering: dense boards exceed the game's command-buffer capacity
-when replayed for both eyes. Expanding that buffer safely remains open.
+remains an acceptance check. Since 5 November the pipeline draws one view:
+the right eye is dropped on the GPU, replays go into the shown eye only,
+and the 3D settings are hidden (see `docs/agents/screen-transform.md`).
 
 ### Full-screen menu backdrop correction
 

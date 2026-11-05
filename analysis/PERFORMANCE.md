@@ -191,6 +191,17 @@ commands, input and visibility flags running. Compare visible output and
 game state across air, ground, boss, pause and menus before enabling either.
 Do not assume this saves half the total frame time.
 
+**Mono path done, 5 November 2026.** Battle, `trace/s5.state`, 60 frames:
+1790 draws into the left eye (`0x18080000`), 1790 into the right
+(`0x18000000`, top size), 288 bottom-screen draws into that same VRAM at
+240×320, about 480 small render-to-texture draws. The GPU now drops draws
+into the right eye at the top size (`Gpu::set_unseen_target`,
+`aim_mouse::RIGHT_EYE`). Headless `kiutrace` over a battle, Pause, Retreat
+Dialog and Cauldron script: 10.34 s → 7.41 s; every top capture is
+byte-identical; bottom captures differ by at most 1 in a channel, as the
+bottom blends over what the right eye left in the shared VRAM. The guest
+still builds the right eye's command lists (CPU); only the GPU work goes.
+
 ### 3. Replace interpreter-only hook stops with compiled callbacks
 
 The measured build's `aim_mouse::PLACES` marks 30 addresses for interpretation. This

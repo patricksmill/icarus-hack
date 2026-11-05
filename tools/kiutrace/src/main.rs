@@ -203,11 +203,7 @@ fn main() {
                     let (image, width, height) = system.read_screen_scaled(screen);
                     write_ppm(&path, width, height, &image);
                 }
-                if let Some((image, width, height)) = system.read_right_eye_scaled() {
-                    write_ppm(&out.join(format!("{}_right.ppm", words[1])), width, height, &image);
-                }
             }
-            "stereo" => system.set_slider_3d(float(1).clamp(0.0, 1.0)),
             "save" => std::fs::write(words[1], system.save_state().expect("save the state")).expect("write the state"),
             "load" => system.load_state(&std::fs::read(words[1]).expect("read the state")).expect("load the state"),
             "scan" => scan(&mut system),

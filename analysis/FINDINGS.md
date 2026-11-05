@@ -239,8 +239,11 @@ is rows (0, -1/120, 0, 1), (-1/160, 0, 0, 1), (0, 0, 1, 0), (0, 0, 0, 1);
 the top pass 0x007255AC uses -1/200 for its own. Top passes draw into both
 eyes' buffers: 0x00916588(.., 2) switches to the right eye's (0x1F000000),
 (.., 0) back to the left (0x1F080000, the one shown with the slider at 0).
-2D sprites go to both through the batch, 3D-renderer text has to be drawn
-once in each.
+2D sprites go to both through the batch, 3D-renderer text is drawn once in
+each. The right eye's target is physical 0x18000000 at 256×512 (dimensions
+register 0x011FF100); the bottom screen draws into the same VRAM at 240×320
+(0x0113F0F0). The port drops the right eye's draws on the GPU and replays
+into the left eye only (see screen-transform.md, One view).
 
 Quad positions are in the element's own space (the narration's text starts at
 0,0), placed on screen by a transform elsewhere, not baked into the vertices.
@@ -991,10 +994,9 @@ both software and Vulkan. A shifted/oversized viewport must not enlarge the
 framebuffer's tile stride: framebuffer dimensions remain authoritative.
 Regression tests cover clip color/depth writes and offset viewport rendering.
 
-Drawing dense bottom lists twice with the 3D slider off overflowed the game's
-command allocation. Only the left-eye replay is needed in mono. Stereo still
-needs a safe command-buffer expansion, so scripted overlays fall back to the
-native two-screen rendering while the slider is nonzero. The Cauldron's
+Drawing dense bottom lists twice overflowed the game's command allocation;
+only the left-eye replay is made. The 3D is always off now, so there is no
+stereo fallback any more. The Cauldron's
 existing drawing path remains separate. `ZAKURO_MENUS_TOP=0` disables this
 feature without changing console state or the save-state format.
 
