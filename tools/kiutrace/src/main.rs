@@ -253,6 +253,12 @@ fn main() {
                     }
                 }
             }
+            // queues a mouse movement for the next frame, as "trace" runs it
+            "aimadd" => {
+                let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                aim_mouse.captured = true;
+                aim_mouse.add(float(1), float(2));
+            }
             "power" => {
                 let frame = system.frames;
                 let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);

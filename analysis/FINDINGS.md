@@ -94,6 +94,19 @@ Per-frame update `0x006D2D8C(aim)`:
 Reticle position: aim+0xA4 (x), aim+0xA8 (y). aim+0xD5 = 1 when not the
 local player. Game camera (`aim+0x8C → +0x2C`): fovy at +0x2B8, aspect at +0x2BC.
 
+Ground camera pitch (`trace/s8.state`, found 5 November by tracing writes and
+disassembling with capstone): the game camera's matrix object is at
+camera+0x278 with yaw at +0x34 and pitch at +0x38 (camera+0x2B0, radians,
+negative up). `0x007462A4` (called once, from the camera update 0x00703B68)
+turns the pitch and clamps it: s18 (down) and s19 (up) are loaded from a
+parameter block (`[sl]+8`, `+0x14`), adjusted by the ground's slope, capped
+at ±80° (0x00746650/54) and final at 0x0074651C, where r6 is the aim object.
+Here they are 15° down and 12° up. With the reticle in its box, aim reach is
++26°/−20.8°; with it held in the middle, +16.2°/−10.9°, the box's 50 of 120
+pixels being 9.8° of a 45° view. The port widens both limits by 10° while
+the mouse aims on the ground (`PITCH_LIMITS`, `CAPTURED_PITCH_REACH`).
+`0x0034C210` is clamp(s0, s1, s2); `0x0034C248` wraps an angle.
+
 ## Still to find
 
 - the lens virtual that fills the projection (camera+4, vtable+8)

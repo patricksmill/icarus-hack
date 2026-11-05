@@ -14,7 +14,7 @@ Addresses are for the USA build (0004000000030100). Findings so far are in
 | Feature | How | Status |
 | --- | --- | --- |
 | Mouse aim, air | aim delta at 0x006D26C4 (`zakuro-core/src/aim_mouse.rs`) | working, tested |
-| Mouse look, ground | camera box collapsed at 0x006D2ED4 | working, tested  |
+| Mouse look, ground | camera box collapsed at 0x006D2ED4; pitch limits +10° each way at 0x0074651C (12°/15° → 22°/25°) | working, tested |
 | Smaller HUD and reticle | sprite flush 0x0092F408, reticle size 0x007C4BD0 | working |
 | 60 FPS | `dist/60fps/code.ips`, 5 words | working, speed verified |
 | Recompiled + hooks | 4 hooked functions interpreted, rest native | working, tested |
