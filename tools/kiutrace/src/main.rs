@@ -450,6 +450,21 @@ fn main() {
                 rule.visible = num(2) != 0;
                 mouse.set_pause_rules(rules);
             }
+            "dialogrule" | "dialogvisible" => {
+                let mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                let mut rules = mouse.dialog_rules();
+                let rule = match words.get(1).copied() {
+                    Some("span") => &mut rules.span,
+                    Some("panel") => &mut rules.panel,
+                    _ => panic!("{} requires a Retreat Dialog rule: span or panel", words[0]),
+                };
+                if words[0] == "dialogvisible" {
+                    rule.visible = num(2) != 0;
+                } else {
+                    rule.to = [float(2), float(3), float(4), float(5)];
+                }
+                mouse.set_dialog_rules(rules);
+            }
             "navlink" => {
                 use zakuro_core::aim_mouse::NavigationDirection;
                 let direction = match words.get(2).copied() {

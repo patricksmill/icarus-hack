@@ -741,6 +741,15 @@ and hidden Back neither draws nor takes pointer input. Tests: 299 passed.
 Windows executable rebuilt at `dist/zakuro-kiu-mouse.exe` (SHA-256
 `a47d88f5f6be85b8a359c6b061d4ba53210722006782df0854d1e4f80f1dbb50`).
 The pre-transform executable is `dist/zakuro-kiu-mouse-before-cauldron-transform.exe`.
+The Retreat Dialog has its own `DialogRules` (span, panel), apart from
+Pause's: before, hiding Pause's centre hid the dialog. Its question and
+No/Yes were missing on the top screen in the left eye, which is the one a
+flat screen shows: the call table records each site once, so the left
+eye's copies were never kept (`pause_calls_at` now records every entry).
+The words follow the panel through their projection. Checked on
+`trace/s5.state` (START, Retreat): default identical in layout, moved panel
+carries box, buttons and words, hidden panel draws none, a click on the
+moved No (top 247.5,105 → bottom 95,170) closes the dialog. Tests: 301.
 Pause layout rules (`PlacementRule`
 with anchor and scale mode) are editable data. The dev-only editor
 (`--menu-editor`, F2) edits them live and exports `menu-layout-export.txt` with a
