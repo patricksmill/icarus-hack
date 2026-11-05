@@ -489,6 +489,8 @@ byte on both screens.
 
 High Refresh Mode presents pictures at the host monitor refresh rate (120/144/240 Hz) using presenter interpolation between real frames, with the guest locked at 60 updates per second (ADR 0006).
 
+**Switched off, 4 November 2026:** in play it slowed the emulation down until the sound ran dry. The Settings toggle and cap are hidden, and the mode is always off; a saved `high_refresh_mode` (or `frame_interpolation`) is ignored and no longer written. The presenter code and ADR 0006 stay for a later fix.
+
 - **Executable delivery**: Rebuilt Windows release executable from integration branch `high-refresh` and installed as `dist/zakuro-kiu-mouse.exe` (SHA-256 `e19b0cabb318536f39aa565faa6ea4c1e78290cd681403bb37231a242e54d4a7`). Previous executable retained as `dist/zakuro-kiu-mouse-before-high-refresh.exe`.
 - **Readout & Pacing**: Split FPS display reflects pictures shown and game updates (`144 shown / 60 game` at 144 Hz). At 120 Hz, pictures alternate real and $t=0.5$. Non-multiple host rates (144, 165) follow the clock sequence ($0, 0.417, 0.833, \dots$).
 - **Gameplay & Audio**: Game updates remain strictly 60/s, audio DSP sample clock and dialogue sync are identical with mode on or off. Stalls (>2 refreshes) safely drop game rate while falling back to real pictures.

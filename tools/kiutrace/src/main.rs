@@ -47,10 +47,10 @@
 //!   ctouch <x> <y>                touch the Fiend's Cauldron drawn on the top screen at its pixel, x of its 400
 //!   cdrag <x0> <y0> <x1> <y1> <frames>  and drag across it
 //!   chover <x> <y>                move the mouse over it there, without touching
-//!   cauldrontop <top> <panel> <bar> <dial> <back> <move out> <rest>  the same in a layout of its own: the top's
-//!                                 picture, its panel, the bottom's bar, Back, Move Out and the rest each as 8 numbers,
-//!                                 the box it goes in on the top screen then the part of its screen shown, x y width
-//!                                 height from the top left; the dial a size against the bar's
+//!   cauldronrule <role> <to x y w h> <from x y w h> <anchor> <anchor_y>  set one Fiend's Cauldron placement rule:
+//!                                 role top, panel, bar, dial, back, moveout or rest; to is the box at its design
+//!                                 width as shown, from the part of its screen shown (panel and dial at intensity 0)
+//!   cauldronvisible <role> <0|1>  hide/show one Fiend's Cauldron part, drawing and touches both
 //!   hover <x> <y> / unhover       move the mouse over the bottom screen's pixel, or off it, with
 //!                                 Zakuro's menu hover on: menus light what is under it, keys give them back
 //!   click                         click the mouse where it hovers: a menu outside battle outlines and uses
@@ -341,7 +341,7 @@ fn main() {
                 }
                 for (x, y) in path {
                     let frames = system.frames;
-                    let at = system.aim_mouse.as_mut().and_then(|aim_mouse| aim_mouse.cauldron_touch(frames, x, y, words[0] != "chover"));
+                    let at = system.aim_mouse.as_mut().and_then(|aim_mouse| aim_mouse.top_screen_touch(frames, x, y, words[0] != "chover"));
                     println!("  top {x} {y} -> bottom {at:?}");
                     input.touch = at.filter(|_| words[0] != "chover").map(|(x, y)| (x as u16, y as u16));
                     for _ in 0..if words[0] == "cdrag" { 1 } else { 6 } {
@@ -353,16 +353,24 @@ fn main() {
                 input.touch = None;
                 let frames = system.frames;
                 if let Some(aim_mouse) = system.aim_mouse.as_mut() {
-                    aim_mouse.cauldron_touch(frames, 0.0, 0.0, false);
+                    aim_mouse.top_screen_touch(frames, 0.0, 0.0, false);
                 }
             }
-            "cauldrontop" => {
-                use zakuro_core::aim_mouse::{CauldronLayout, Placement};
-                let place = |i: usize| Placement { to: [float(i), float(i + 1), float(i + 2), float(i + 3)], from: [float(i + 4), float(i + 5), float(i + 6), float(i + 7)] };
-                let layout = CauldronLayout { top: place(1), panel: place(9), bar: place(17), dial: float(25), back: place(26), move_out: place(34), rest: place(42) };
-                let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);
-                aim_mouse.cauldron_on_top = true;
-                aim_mouse.cauldron_layout = Some(layout);
+            "cauldronrule" | "cauldronvisible" => {
+                use zakuro_core::aim_mouse::CauldronRole;
+                let role = words.get(1).and_then(|name| CauldronRole::from_name(name))
+                    .unwrap_or_else(|| panic!("{} requires a Cauldron role: top, panel, bar, dial, back, moveout, rest or ring", words[0]));
+                let mouse = system.aim_mouse.get_or_insert_with(Default::default);
+                let mut rules = mouse.cauldron_rules();
+                let rule = rules.rule_mut(role);
+                if words[0] == "cauldronvisible" {
+                    rule.visible = num(2) != 0;
+                } else {
+                    rule.to = [float(2), float(3), float(4), float(5)];
+                    rule.from = [float(6), float(7), float(8), float(9)];
+                    (rule.anchor, rule.anchor_y) = (float(10), float(11));
+                }
+                mouse.set_cauldron_rules(rules);
             }
             "hover" | "unhover" => {
                 let aim_mouse = system.aim_mouse.get_or_insert_with(Default::default);

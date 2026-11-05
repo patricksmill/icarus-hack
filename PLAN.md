@@ -452,21 +452,27 @@ draws both screens on the top screen through the game's own renderer
 (FINDINGS "The Fiend's Cauldron"): the board picture without its
 background, the intensity panel over the bar sliding with the dial, the
 bar with a smaller dial, Back, the pot and pan, and Move Out, each a part of its screen cropped by its camera's projection
-into a box (`CauldronLayout::fitting`, made for 16:9, smaller on a
-narrower window). The hint stays across the top. Clicks map back to the
-bottom screen, a press of the dial drags along the bar, and the mouse over
-the dial, Move Out or Back lights it as the arrow keys do. The mouse is
-let go while it shows. `ZAKURO_CAULDRON_TOP=0` turns it off. Harness:
-`cauldron`, `ctouch`, `cdrag`, `chover`, `cauldrontop`.
+into a box (`CauldronRules`, one `PlacementRule` per `CauldronRole`, made
+for 16:9 and smaller on a narrower window). The hint stays across the top.
+Clicks map back to the bottom screen, a press of the dial drags along the
+bar, and the mouse over the dial, Move Out or Back lights it as the arrow
+keys do. The mouse is let go while it shows. `ZAKURO_CAULDRON_TOP=0` turns
+it off. Harness: `cauldron`, `ctouch`, `cdrag`, `chover`, `cauldronrule`,
+`cauldronvisible`.
 
 Checked: dial drag 4 → 7.4, Move Out starts the pour, hover over each
 button, the pour, a battle's 300 frames the same with it on.
 
-Left: your test; the bottom's ring background around the pot, asked for
-back (`Bt0010`, left off in `CAULDRON_LEFT_OFF`), to draw in its own part
-behind the pot without covering the board; the board's hearts box lost its
-dark frame with the background (same mesh node); the real bottom screen is drawn widened at
-16:9 (the widening reaches its camera too).
+Left: your test; the board's hearts box lost its dark frame with the
+background (same mesh node), to be fixed on its own; the real bottom screen
+is drawn widened at 16:9 (the widening reaches its camera too).
+
+The ring background (`Bt0010`) is back as the Cauldron's eighth part, `ring`:
+its own PlacementRule, behind the pot by default, editable in F2, drawn
+before the top's 3D so the board and the pot cover it, one picture for both
+eyes. Its rings brighten with the intensity: at 7.4 they show faintly around
+the pot and under Move Out, and the board is unchanged (`trace/s12.state`,
+dial dragged, `cauldronvisible ring 0/1`). See `analysis/CAULDRON_RING.md`.
 
 ## Phase 5: playing without the bottom screen
 
@@ -718,8 +724,24 @@ Parity: core tests pass; 14 save-state captures (file select, chapter select,
 main menu, Options family, Armory, Solo, Altar, Practice, Vault, dialogs) are
 byte-identical before and after both registry merges. `CauldronPlace` is gone:
 Pause, Scripted Menus and the Cauldron share one `Placement` type for drawing
-and hit-testing. The Cauldron is also registered (`TaskProbe`), with its shown,
-pouring and task state owned by the transform. Pause layout rules (`PlacementRule`
+and hit-testing. The Cauldron is migrated: its row (`TaskProbe`) seats a
+`ScreenLayout` from `CauldronRules` once per frame where the pot's task runs,
+at its value, and drawing, hit-testing and the cursor lighting all read it;
+`CauldronLayout` and its saved dial are gone. Parity: four widths (5:3, 16:9,
+21:9, 4:3) from `trace/s12.state`, 32 captures byte-identical, every hover and
+touch hitting the same Control within 0.0001 bottom-screen pixels, dial drag
+4 → 6.9 and the pour unchanged. The frontend asks one `top_screen_touch`.
+The Cauldron now has its own F2 editor window with seven canvas parts, drag,
+resize and visibility. Edits convert back to design-width rules, including
+the intensity-dependent Panel and Dial. Save layout includes Cauldron rules;
+Reset and Rust/change-request export are available. Pause and Retreat Dialog
+no longer expose stale Scripted Menu layers. Verified through egui pointer
+events, layout save/load, and `trace/s12.state`: the picture moves/resizes
+and hidden Back neither draws nor takes pointer input. Tests: 299 passed.
+Windows executable rebuilt at `dist/zakuro-kiu-mouse.exe` (SHA-256
+`a47d88f5f6be85b8a359c6b061d4ba53210722006782df0854d1e4f80f1dbb50`).
+The pre-transform executable is `dist/zakuro-kiu-mouse-before-cauldron-transform.exe`.
+Pause layout rules (`PlacementRule`
 with anchor and scale mode) are editable data. The dev-only editor
 (`--menu-editor`, F2) edits them live and exports `menu-layout-export.txt` with a
 Rust fragment and a change request. The same overlay draws a canvas over the
